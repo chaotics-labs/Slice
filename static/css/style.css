@@ -957,3 +957,52 @@ body {
   .sidebar > #actionArea { margin-top: 0; }
   .segmented { flex-wrap: wrap; }
 }
+
+/* ── VAD analyzing state ──────────────────────── */
+.tl-vad-state {
+  display: none;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 40px;
+  opacity: 0;
+  transition: opacity .25s var(--ease);
+}
+.tl-vad-state.active  { display: flex; }
+.tl-vad-state.visible { opacity: 1; }
+
+.vad-bars {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 36px;
+}
+.vad-bar {
+  display: block;
+  width: 4px;
+  border-radius: 3px;
+  background: var(--accent);
+  animation: vadBounce 1.1s ease-in-out infinite;
+  transform-origin: center;
+}
+.vad-bar:nth-child(1) { height: 30%; animation-delay: 0s;    }
+.vad-bar:nth-child(2) { height: 55%; animation-delay: .13s;  }
+.vad-bar:nth-child(3) { height: 80%; animation-delay: .26s;  }
+.vad-bar:nth-child(4) { height: 100%;animation-delay: .39s;  }
+.vad-bar:nth-child(5) { height: 80%; animation-delay: .26s;  }
+.vad-bar:nth-child(6) { height: 55%; animation-delay: .13s;  }
+.vad-bar:nth-child(7) { height: 30%; animation-delay: 0s;    }
+
+@keyframes vadBounce {
+  0%, 100% { transform: scaleY(.25); opacity: .5; }
+  50%       { transform: scaleY(1);  opacity: 1;  }
+}
+
+.vad-label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .3px;
+  color: var(--label-3);
+}

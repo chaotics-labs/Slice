@@ -410,6 +410,7 @@ function resetState() {
   document.getElementById('sliceBtn').disabled=true;
   document.getElementById('tlEmpty').style.display='';
   document.getElementById('tlBody').style.display='none';
+  var vs=document.getElementById('tlVadState'); if(vs){vs.classList.remove('active','visible');}
   document.getElementById('tlChipPct').style.display='none';
   document.getElementById('tlChipSegs').style.display='none';
   document.getElementById('tlDurLabel').textContent='';
@@ -567,11 +568,32 @@ function highlightActiveClip(idx){
 }
 
 // ── Preview (VAD) ─────────────────────────────────────────────────────────────
+// ── VAD indicator ─────────────────────────────────────────────────────────────
+function vadStart() {
+  var empty = document.getElementById('tlEmpty');
+  var vad   = document.getElementById('tlVadState');
+  var body  = document.getElementById('tlBody');
+  if (!vad) return;
+  if (empty) empty.style.display = 'none';
+  if (body)  body.style.display  = 'none';
+  vad.classList.add('active');
+  requestAnimationFrame(function() {
+    requestAnimationFrame(function() { vad.classList.add('visible'); });
+  });
+}
+function vadStop() {
+  var vad = document.getElementById('tlVadState');
+  if (!vad) return;
+  vad.classList.remove('visible');
+  setTimeout(function() { vad.classList.remove('active'); }, 260);
+}
+
 function fetchPreview(){
   if(!state.fileId) return;
   clearTimeout(state.previewTimer);
   var sb=document.getElementById('sliceBtn');
   if(sb){sb.disabled=true;sb.style.opacity='0.5';sb.style.cursor='wait';}
+  vadStart();
   state.previewTimer=setTimeout(async function(){
     try{
       var res=await fetch('/api/preview',{
@@ -583,7 +605,7 @@ function fetchPreview(){
           min_speech:parseInt(document.getElementById('speechSlider').value)
         })
       });
-      if(res.status===429){return;}
+      if(res.status===429){vadStop();return;}
       var data=await res.json();
       if(data.ok&&data.stats){
         showTimeline(data.stats.segments_list,data.stats.original_duration);
@@ -595,6 +617,8 @@ function fetchPreview(){
     } catch(_){
       var sb=document.getElementById('sliceBtn');
       if(sb){sb.disabled=false;sb.style.opacity='';sb.style.cursor='';}
+    } finally {
+      vadStop();
     }
   }, 800);
 }

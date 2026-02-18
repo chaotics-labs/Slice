@@ -1,13 +1,18 @@
+<p align="center">
+  <img src="static/res/Chaotics Banner.png" alt="Chaotics Slice Banner" width="600">
+</p>
+
 # Chaotics Slice ✂
 
 > AI-powered silence remover for video editors.  
-> Detects speech with Silero VAD and cuts silences — locally, no cloud, no subscription.
+> Detects speech with Silero VAD and cuts silences. Runs locally, free forever.
 
 ---
 
+
 ## What it does
 
-Upload a video, pick an aggression level (Chill → Savage), and Chaotics Slice automatically detects every moment of speech and cuts everything else out. Preview the cuts on the timeline before rendering, then export the sliced video or a cut list (EDL / FCPXML / Premiere XML) straight into your NLE.
+Upload a video, pick an aggression level (Chill → Savage), and *Slice* automatically detects every moment of speech and cuts everything else out. Preview the cuts on the timeline before rendering, then export the sliced video or a cut list (EDL / FCPXML / Premiere XML) straight into your NLE.
 
 ---
 
