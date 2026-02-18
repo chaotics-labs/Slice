@@ -1,8 +1,5 @@
 name: Build & Release
 
-# Triggers:
-#   - Push a version tag:  git tag v1.2.0 && git push --tags
-#   - Manual run from the Actions tab (for testing)
 on:
   push:
     tags:
@@ -10,13 +7,12 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write   # needed to create GitHub Releases and upload assets
+  contents: write
 
 jobs:
-  # ───────────────────────────────────────────────────────────────────────────
   build-macos-arm:
     name: macOS (Apple Silicon)
-    runs-on: macos-14          # M1 runner
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
 
@@ -48,42 +44,6 @@ jobs:
           name: macos-arm64
           path: dist/ChaoticSlice-macOS-arm64.zip
 
-  # ───────────────────────────────────────────────────────────────────────────
-  build-macos-intel:
-    name: macOS (Intel)
-    runs-on: macos-13-large          # last Intel runner
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install FFmpeg
-        run: brew install ffmpeg
-
-      - name: Install Python deps
-        run: |
-          pip install --upgrade pip
-          pip install torch torchvision torchaudio
-          pip install flask waitress pyinstaller
-
-      - name: Build
-        run: pyinstaller chaotics_slice.spec --noconfirm
-
-      - name: Zip app bundle
-        run: |
-          cd dist
-          zip -r ChaoticSlice-macOS-x86_64.zip ChaoticSlice.app
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: macos-x86_64
-          path: dist/ChaoticSlice-macOS-x86_64.zip
-
-  # ───────────────────────────────────────────────────────────────────────────
   build-windows:
     name: Windows
     runs-on: windows-latest
@@ -96,15 +56,14 @@ jobs:
           python-version: '3.11'
 
       - name: Install FFmpeg
-        # winget is available on GitHub's Windows runners
         run: winget install --id Gyan.FFmpeg --silent --accept-source-agreements --accept-package-agreements
-        continue-on-error: true   # fall back to choco if winget fails
+        continue-on-error: true
 
       - name: Install FFmpeg (fallback via Chocolatey)
         if: failure()
         run: choco install ffmpeg -y
 
-      - name: Install Python deps (CPU build — safe for all users)
+      - name: Install Python deps
         run: |
           pip install --upgrade pip
           pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
@@ -125,7 +84,6 @@ jobs:
           name: windows-x64
           path: dist/ChaoticSlice-Windows-x64.zip
 
-  # ───────────────────────────────────────────────────────────────────────────
   build-linux:
     name: Ubuntu (Linux)
     runs-on: ubuntu-22.04
@@ -142,7 +100,7 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y ffmpeg
 
-      - name: Install Python deps (CPU build)
+      - name: Install Python deps
         run: |
           pip install --upgrade pip
           pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
@@ -162,10 +120,9 @@ jobs:
           name: linux-x86_64
           path: dist/ChaoticSlice-Linux-x86_64.tar.gz
 
-  # ───────────────────────────────────────────────────────────────────────────
   release:
     name: Create GitHub Release
-    needs: [build-macos-arm, build-macos-intel, build-windows, build-linux]
+    needs: [build-macos-arm, build-windows, build-linux]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -192,7 +149,6 @@ jobs:
             | Platform | File |
             |---|---|
             | macOS Apple Silicon (M1/M2/M3) | `ChaoticSlice-macOS-arm64.zip` |
-            | macOS Intel | `ChaoticSlice-macOS-x86_64.zip` |
             | Windows 10/11 | `ChaoticSlice-Windows-x64.zip` |
             | Ubuntu / Linux | `ChaoticSlice-Linux-x86_64.tar.gz` |
 
@@ -212,6 +168,5 @@ jobs:
           prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}
           files: |
             release-assets/macos-arm64/ChaoticSlice-macOS-arm64.zip
-            release-assets/macos-x86_64/ChaoticSlice-macOS-x86_64.zip
             release-assets/windows-x64/ChaoticSlice-Windows-x64.zip
             release-assets/linux-x86_64/ChaoticSlice-Linux-x86_64.tar.gz
