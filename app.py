@@ -11,8 +11,25 @@ from pathlib import Path
 from flask import Flask, render_template, request, jsonify, send_file, Response, after_this_request
 import queue
 import sys
+import os
 import platform
 import webbrowser
+
+# ── FFmpeg path resolution ─────────────────────────────────────────────────────
+# When running as a PyInstaller one-file bundle, ffmpeg/ffprobe are extracted
+# to sys._MEIPASS. Fall back to PATH when running from source.
+
+def _find_bundled(name: str) -> str:
+    if getattr(sys, 'frozen', False):
+        suffix = '.exe' if sys.platform == 'win32' else ''
+        candidate = os.path.join(sys._MEIPASS, name + suffix)
+        if os.path.isfile(candidate):
+            return candidate
+    return name  # running from source — use PATH
+
+FFMPEG  = _find_bundled('ffmpeg')
+FFPROBE = _find_bundled('ffprobe')
+
 from threading import Timer
 
 # ─── Base directory for PyInstaller or normal run ─────────────────────────────
@@ -62,7 +79,7 @@ print(f"[Chaotics Slice] torch={torch.__version__}  device={DEVICE}")
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
 def get_duration(path: str) -> float:
-    cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "json", path]
+    cmd = [FFPROBE, "-v", "error", "-show_entries", "format=duration", "-of", "json", path]
     result = subprocess.run(cmd, capture_output=True, text=True)
     return float(json.loads(result.stdout)["format"]["duration"])
 
@@ -70,7 +87,7 @@ def get_duration(path: str) -> float:
 def extract_audio_to(video_path: str, audio_path: str):
     """Extract mono 16 kHz WAV via FFmpeg. No torchaudio I/O used."""
     cmd = [
-        "ffmpeg", "-y", "-i", video_path,
+        FFMPEG, "-y", "-i", video_path,
         "-ac", "1", "-ar", "16000", "-vn", "-f", "wav", audio_path,
         "-loglevel", "error",
     ]
@@ -265,7 +282,7 @@ def process_job(job_id: str, file_id: str, params: dict):
         filter_complex = ";".join(filter_parts) + f";{interleaved}concat=n={n}:v=1:a=1[outv][outa]"
 
         cmd = [
-            "ffmpeg", "-y", "-i", video_path,
+            FFMPEG, "-y", "-i", video_path,
             "-filter_complex", filter_complex,
             "-map", "[outv]", "-map", "[outa]",
             "-c:v", "libx264", "-preset", "fast", "-crf", "18",

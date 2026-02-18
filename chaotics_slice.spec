@@ -13,14 +13,33 @@
 
 import sys
 import os
+import shutil
 from pathlib import Path
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 block_cipher = None
 
-# ── Collect torch hub cache so Silero VAD model is bundled ───────────────────
-# We do NOT bundle the model weights — they're tiny and downloaded once to
-# ~/.cache/torch/hub on first run.  We DO bundle all torch/torchaudio packages.
+# ── Bundle FFmpeg + FFprobe ───────────────────────────────────────────────────
+# Locate the ffmpeg/ffprobe executables on the build machine's PATH and bundle
+# them into the root of the app so they're available at runtime on any machine.
+def find_binary(name):
+    exe = shutil.which(name)
+    if not exe:
+        raise RuntimeError(
+            f"'{name}' not found on PATH — install FFmpeg before building.\n"
+            f"  macOS:   brew install ffmpeg\n"
+            f"  Windows: winget install Gyan.FFmpeg\n"
+            f"  Linux:   sudo apt install ffmpeg"
+        )
+    return exe
+
+ffmpeg_bin  = find_binary('ffmpeg')
+ffprobe_bin = find_binary('ffprobe')
+
+bundled_binaries = [
+    (ffmpeg_bin,  '.'),   # destination '.' = root of the bundle
+    (ffprobe_bin, '.'),
+]
 
 # ── Hidden imports ────────────────────────────────────────────────────────────
 hidden_imports = [
@@ -55,7 +74,7 @@ datas += collect_data_files('torchaudio')
 a = Analysis(
     ['app.py'],
     pathex=[],
-    binaries=[],
+    binaries=bundled_binaries,
     datas=datas,
     hiddenimports=hidden_imports,
     hookspath=[],
