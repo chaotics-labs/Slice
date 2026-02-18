@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("VadDotNet")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+a59381057e3bd7224442bbf7b2fbe9d9251e0dd2")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+30aa90edc067c3b2c6eb94afee875074fea04896")]
 [assembly: System.Reflection.AssemblyProductAttribute("VadDotNet")]
 [assembly: System.Reflection.AssemblyTitleAttribute("VadDotNet")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
