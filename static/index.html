@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Chaotics Slice  v1.2</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+
+<!-- ────────────────────────────────────────────────── NAV BAR -->
+<nav class="navbar">
+  <div class="navbar-left">
+    <a href="https://lox.rombaut.org" target="_blank" rel="noopener noreferrer">
+    <img src="/static/res/Chaotics Logo White.svg" alt="Chaotics" class="brand-logo" />
+</a> Slice
+    <!-- <img src="/static/res/Chaotics Logo White.svg" alt="Chaotics" class="brand-logo" /> Slice -->
+    <span class="brand-badge">v1.2</span>
+  </div>
+  <div class="navbar-right">
+    <a href="https://github.com/yourusername" target="_blank" rel="noopener" class="navbar-btn" title="View source on GitHub">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/>
+      </svg>
+      GitHub
+    </a>
+    <div class="navbar-divider"></div>
+    <button class="navbar-icon-btn" id="themeBtn" title="Toggle appearance">
+      <svg id="iconSun" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="5"/>
+        <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+      </svg>
+      <svg id="iconMoon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none">
+        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+      </svg>
+    </button>
+  </div>
+</nav>
+
+<!-- ────────────────────────────────────────────────── WORKSPACE -->
+<div class="workspace">
+
+  <!-- ══════════════════════ LEFT SIDEBAR -->
+  <aside class="sidebar">
+
+    <!-- Upload -->
+    <section class="card">
+      <h2 class="card-label">Source</h2>
+      <div id="dropZone" class="dropzone">
+        <input type="file" id="fileInput" accept=".mp4,.mkv,.mov,.avi,.webm,.m4v,.flv">
+        <div class="dropzone-content">
+          <div class="dz-icon-wrap">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/>
+              <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/>
+            </svg>
+          </div>
+          <span class="dz-title">Drop video here</span>
+          <span class="dz-sub">MP4 · MKV · MOV · AVI · WebM</span>
+        </div>
+      </div>
+      <div class="file-pill" id="fileChip">
+        <div class="pill-icon" id="chipIcon">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="7" width="20" height="15" rx="2"/><polyline points="17 2 12 7 7 2"/>
+          </svg>
+        </div>
+        <div class="pill-meta">
+          <span class="pill-name" id="chipName">—</span>
+          <span class="pill-size" id="chipSize">—</span>
+        </div>
+        <button class="pill-remove" id="chipClear" title="Remove file">
+          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>
+    </section>
+
+    <!-- Mode -->
+    <section class="card">
+      <h2 class="card-label">Aggression</h2>
+      <div class="segmented" id="modeSelector">
+        <button class="seg-btn" data-mode="chill"><span class="seg-label">Chill</span></button>
+        <button class="seg-btn active" data-mode="normal"><span class="seg-label">Normal</span></button>
+        <button class="seg-btn" data-mode="tight"><span class="seg-label">Tight</span></button>
+        <button class="seg-btn" data-mode="savage"><span class="seg-label">Savage</span></button>
+      </div>
+      <p class="mode-hint" id="modeHint">Balanced cuts with natural pacing</p>
+    </section>
+
+    <!-- Pro Settings -->
+    <section class="card">
+      <button class="disclosure-btn" id="proToggle" aria-expanded="true">
+        <span class="card-label" style="margin:0">Advanced</span>
+        <svg class="disclosure-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="6 9 12 15 18 9"/>
+        </svg>
+      </button>
+      <div class="pro-panel" id="proPanel">
+        <div class="slider-group">
+          <div class="slider-header">
+            <span class="slider-label">VAD Threshold</span>
+            <span class="slider-val" id="thrVal">0.50</span>
+          </div>
+          <div class="slider-track-wrap">
+            <div class="slider-fill-track"><div class="slider-fill" id="thrFill"></div></div>
+            <input type="range" class="apple-range" id="thrSlider" min="0.1" max="0.9" step="0.05" value="0.5">
+          </div>
+          <div class="slider-hints"><span>Sensitive</span><span>Selective</span></div>
+        </div>
+        <div class="slider-group">
+          <div class="slider-header">
+            <span class="slider-label">Minimum Speech</span>
+            <span class="slider-val" id="speechVal">250 ms</span>
+          </div>
+          <div class="slider-track-wrap">
+            <div class="slider-fill-track"><div class="slider-fill" id="speechFill"></div></div>
+            <input type="range" class="apple-range" id="speechSlider" min="50" max="800" step="50" value="250">
+          </div>
+          <div class="slider-hints"><span>Short</span><span>Long</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Action -->
+    <div id="actionArea">
+      <button class="btn-primary" id="sliceBtn" disabled>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/>
+          <path d="M20 4 8.12 15.88M14.47 14.48 20 20M8.12 8.12 12 12"/>
+        </svg>
+        Slice
+      </button>
+    </div>
+
+  </aside>
+
+  <!-- ══════════════════════ MAIN CONTENT -->
+  <main class="content">
+
+    <!-- Timeline -->
+    <section class="card card-timeline" id="timelineCard">
+      <div class="tl-header">
+        <h2 class="card-label">Timeline</h2>
+        <div class="tl-meta-row">
+          <span class="tl-chip" id="tlChipPct" style="display:none"></span>
+          <span class="tl-chip tl-chip-segs" id="tlChipSegs" style="display:none"></span>
+          <span class="tl-meta-dur" id="tlDurLabel"></span>
+        </div>
+      </div>
+
+      <div class="tl-empty-state" id="tlEmpty">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" opacity=".3">
+          <rect x="2" y="3" width="20" height="14" rx="2"/>
+          <line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
+        </svg>
+        <p>Upload a video to preview the cut timeline</p>
+      </div>
+
+      <div class="tl-body" id="tlBody" style="display:none">
+        <div class="tl-ruler" id="tlRuler"></div>
+        <div class="tl-row">
+          <span class="tl-row-label">Keep</span>
+          <div class="tl-track" id="trackKept">
+            <div class="tl-playhead" id="phKept"></div>
+          </div>
+        </div>
+        <div class="tl-row">
+          <span class="tl-row-label">Cut</span>
+          <div class="tl-track tl-track-cut" id="trackCut">
+            <div class="tl-playhead" id="phCut"></div>
+          </div>
+        </div>
+        <div class="tl-axis">
+          <span>0:00</span>
+          <span id="tlAxisMid"></span>
+          <span id="tlAxisEnd">—</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══ Video Preview Player ══ -->
+    <section class="card card-preview" id="videoPreviewCard" style="display:none">
+      <div class="pv-header">
+        <div class="pv-header-left">
+          <h2 class="card-label" style="margin:0">Preview Cuts</h2>
+          <span class="pv-hint">Click any green clip on the timeline or use controls below</span>
+        </div>
+        <div class="pv-controls">
+          <button class="pv-btn" id="pvPrevBtn" title="Previous segment">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="19 20 9 12 19 4 19 20"/><line x1="5" y1="19" x2="5" y2="5"/>
+            </svg>
+          </button>
+          <button class="pv-btn pv-btn-main" id="pvPlayBtn" title="Play preview — jumps across cuts automatically">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+              <polygon points="5 3 19 12 5 21 5 3"/>
+            </svg>
+          </button>
+          <button class="pv-btn pv-btn-main" id="pvPauseBtn" title="Pause" style="display:none">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+              <rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>
+            </svg>
+          </button>
+          <button class="pv-btn" id="pvNextBtn" title="Next segment">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/>
+            </svg>
+          </button>
+          <span class="pv-seg-counter" id="pvSegCounter">No cuts yet</span>
+        </div>
+      </div>
+      <div class="pv-body">
+        <div class="pv-video-wrap">
+          <video id="previewVideo" playsinline preload="metadata"></video>
+          <!-- Scrub bar overlay -->
+          <div class="pv-scrub-bar">
+            <div class="pv-scrub-track">
+              <div class="pv-playhead-bar" id="pvPlayheadBar"></div>
+            </div>
+          </div>
+          <!-- Live badge shown when playing -->
+          <div class="pv-live-badge" id="pvLiveBadge">
+            <span class="pv-live-dot"></span>LIVE PREVIEW
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Stats -->
+    <section class="stats-row" id="statsCard" style="display:none">
+      <div class="stat-item">
+        <div class="stat-val" id="statPct">—</div>
+        <div class="stat-label">Silence Removed</div>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <div class="stat-val" id="statCut">—</div>
+        <div class="stat-label">Time Saved</div>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-item">
+        <div class="stat-val" id="statSegs">—</div>
+        <div class="stat-label">Speech Segments</div>
+      </div>
+    </section>
+
+    <!-- ══ Export Cut List ══ -->
+    <section class="card card-export" id="exportCard" style="display:none">
+      <div class="export-header">
+        <div>
+          <h2 class="card-label" style="margin:0">Export Cut List</h2>
+          <span class="export-hint">Bring cuts into your NLE without re-encoding</span>
+        </div>
+      </div>
+      <div class="export-btns">
+
+        <button class="export-btn" id="exportEdlBtn">
+          <div class="export-btn-icon" style="background:rgba(0,122,255,.12);color:#0a84ff;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+              <line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
+            </svg>
+          </div>
+          <div class="export-btn-meta">
+            <span class="export-btn-name">.EDL</span>
+            <span class="export-btn-sub">DaVinci Resolve · Avid</span>
+          </div>
+          <svg class="export-btn-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+        </button>
+
+        <button class="export-btn" id="exportFcpBtn">
+          <div class="export-btn-icon" style="background:rgba(50,173,230,.12);color:#32ade6;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>
+            </svg>
+          </div>
+          <div class="export-btn-meta">
+            <span class="export-btn-name">.FCPXML</span>
+            <span class="export-btn-sub">Final Cut Pro · DaVinci XML</span>
+          </div>
+          <svg class="export-btn-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+        </button>
+
+        <button class="export-btn" id="exportPpBtn">
+          <div class="export-btn-icon" style="background:rgba(175,82,222,.12);color:#bf5af2;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2"/><rect x="8" y="8" width="8" height="8"/>
+            </svg>
+          </div>
+          <div class="export-btn-meta">
+            <span class="export-btn-name">.XML</span>
+            <span class="export-btn-sub">Premiere Pro · XMEML v4</span>
+          </div>
+          <svg class="export-btn-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+        </button>
+
+      </div>
+    </section>
+
+    <!-- Log -->
+    <section class="card card-log">
+      <div class="log-header">
+        <h2 class="card-label">Activity</h2>
+        <div class="progress-pill" id="progressPill" style="display:none">
+          <div class="progress-fill" id="progressFill"></div>
+        </div>
+      </div>
+      <div id="logBox">
+        <span class="log-placeholder">Waiting for input…</span>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- Hover tooltip -->
+<div class="tl-tooltip" id="tlTooltip"></div>
+
+<script src="/static/js/app.js"></script>
+</body>
+</html>
