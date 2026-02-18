@@ -32,23 +32,8 @@ var MODE_HINTS = {
   tight:  'Aggressive — removes short pauses',
   savage: 'Maximum cuts, no mercy'
 };
-var MODE_ACCENT = {
-  chill:  '--teal',
-  normal: '--blue',
-  tight:  '--orange',
-  savage: '--red'
-};
 
 // ── Utils ─────────────────────────────────────────────────────────────────────
-function cssVar(n)      { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
-function accentCssVar() { return MODE_ACCENT[state.mode]; }
-function accentColor()  { return cssVar(accentCssVar()); }
-function accentRgb() {
-  var hex = accentColor().replace('#','');
-  if (hex.length===3) hex = hex.split('').map(function(c){return c+c;}).join('');
-  var n = parseInt(hex,16);
-  return [(n>>16)&255,(n>>8)&255,n&255].join(',');
-}
 function fmtBytes(b) {
   if (!b) return '—';
   if (b<1e6) return (b/1024).toFixed(1)+' KB';
@@ -67,18 +52,20 @@ function toTimecode(secs,fps) {
   var ss=ts%60, mm=Math.floor(ts/60)%60, hh=Math.floor(ts/3600);
   return String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0')+':'+String(ss).padStart(2,'0')+':'+String(fr).padStart(2,'0');
 }
-function setAccentVars(a) {
-  ['thrFill','speechFill','progressFill'].forEach(function(id){
-    var el=document.getElementById(id); if(el) el.style.background='var('+a+')';
-  });
-  ['thrVal','speechVal'].forEach(function(id){
-    var el=document.getElementById(id); if(el) el.style.color='var('+a+')';
-  });
-  var btn=document.getElementById('sliceBtn');
-  if(btn&&!btn.disabled){
-    btn.style.background='var('+a+')';
-    btn.style.boxShadow='0 2px 16px rgba('+accentRgb()+',.38)';
-  }
+
+// Mode → accent color values (light and dark share the same hue, CSS tokens handle the shade)
+var MODE_ACCENT_VARS = {
+  chill:  { color: 'var(--teal)',   rgb: '50,173,230'  },
+  normal: { color: 'var(--blue)',   rgb: '0,122,255'   },
+  tight:  { color: 'var(--orange)', rgb: '255,149,0'   },
+  savage: { color: 'var(--red)',    rgb: '255,59,48'   },
+};
+
+function applyAccent() {
+  var a = MODE_ACCENT_VARS[state.mode];
+  var root = document.documentElement;
+  root.style.setProperty('--accent',     a.color);
+  root.style.setProperty('--accent-rgb', a.rgb);
 }
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
@@ -117,16 +104,31 @@ function setProgress(pct){
   if(pct>0&&pct<100){
     pill.style.display='';
     fill.style.width=pct+'%';
-    fill.style.background='var('+accentCssVar()+')';
+    fill.style.background='var(--accent)';
+    pill.setAttribute('data-pct', Math.round(pct)+'%');
   } else if(pct>=100){
     fill.style.width='100%';
     fill.style.background='var(--green)';
+    pill.setAttribute('data-pct','100%');
     setTimeout(function(){pill.style.display='none';},800);
   } else {
     pill.style.display='none';
     fill.style.width='0%';
+    pill.removeAttribute('data-pct');
   }
 }
+
+// Track mouse on progress pill so the tooltip follows the cursor
+(function(){
+  document.addEventListener('mousemove', function(e){
+    var pill = document.getElementById('progressPill');
+    if(!pill||pill.style.display==='none') return;
+    var rect = pill.getBoundingClientRect();
+    if(e.clientX<rect.left||e.clientX>rect.right||e.clientY<rect.top-40||e.clientY>rect.bottom+8) return;
+    var pct = Math.max(0,Math.min(100,(e.clientX-rect.left)/rect.width*100));
+    pill.style.setProperty('--tt-left', pct+'%');
+  });
+})();
 
 // ── Sliders ───────────────────────────────────────────────────────────────────
 function initSlider(sid,fid,vid,min,max,fmt){
@@ -161,7 +163,7 @@ function buildTracks(segs,dur){
   var tkK=document.getElementById('trackKept'),tkC=document.getElementById('trackCut');
   [tkK,tkC].forEach(function(tr){Array.from(tr.children).forEach(function(c){if(!c.classList.contains('tl-playhead'))c.remove();});});
   if(!dur) return;
-  var color=accentColor();
+  var color='var(--accent)';
   segs.forEach(function(seg,idx){
     var s=seg[0],e=seg[1],lp=s/dur*100,wp=(e-s)/dur*100;
     if(wp<0.1) return;
@@ -203,13 +205,12 @@ function showTimeline(segs,dur){
 function updateTimelineMeta(stats){
   var pc=document.getElementById('tlChipPct'),sc=document.getElementById('tlChipSegs');
   pc.textContent='-'+stats.pct_removed+'%'; pc.style.display='';
-  pc.style.background='rgba('+accentRgb()+',.12)'; pc.style.color='var('+accentCssVar()+')';
+  pc.style.background='rgba(var(--accent-rgb),.12)'; pc.style.color='var(--accent)';
   sc.textContent=stats.segments+' segs'; sc.style.display='';
   document.getElementById('tlDurLabel').textContent=fmtTime(stats.original_duration);
   updateInfoPanel(stats);
 }
 function updateInfoPanel(stats){
-  var accent='var('+accentCssVar()+')';
   var orig=document.getElementById('pvInfoOriginal');
   var kept=document.getElementById('pvInfoKept');
   var remv=document.getElementById('pvInfoRemoved');
@@ -222,7 +223,7 @@ function updateInfoPanel(stats){
   segs.textContent = stats.segments;
   pct.textContent  = '-'+stats.pct_removed+'%';
   // Apply current accent color to accented values
-  [kept,pct].forEach(function(el){ el.style.color=accent; });
+  [kept,pct].forEach(function(el){ el.style.color='var(--accent)'; });
 }
 
 // ── Timeline hover ────────────────────────────────────────────────────────────
@@ -234,7 +235,7 @@ function updateInfoPanel(stats){
     var t=pct*state.duration;
     ['phKept','phCut'].forEach(function(id){var ph=document.getElementById(id);ph.style.display='';ph.style.left=(pct*100)+'%';});
     var inSeg=state.segments.find(function(s){return t>=s[0]&&t<=s[1];});
-    var color=accentColor();
+    var color='var(--accent)';
     tooltip.innerHTML='<span class="tl-tt-dot" style="background:'+(inSeg?color:'var(--label-3)')+'"></span>'+fmtTime(t)+' &middot; '+(inSeg?'<b style="color:'+color+'">kept</b>':'<span style="color:var(--label-3)">cut</span>');
     tooltip.classList.add('show');
     var tx=e.clientX-tooltip.offsetWidth/2, ty=e.clientY-40;
@@ -394,7 +395,7 @@ function onFileReady(data) {
 
   pushLog('Ready — ' + fmtTime(data.duration) + ' · ' + fmtBytes(data.size), 'success');
   document.getElementById('sliceBtn').disabled = true; // enabled after VAD preview
-  setAccentVars(accentCssVar());
+  applyAccent();
   fetchPreview();
 }
 
@@ -589,7 +590,7 @@ function fetchPreview(){
         updateTimelineMeta(data.stats);
         showExportCard();
         var sb=document.getElementById('sliceBtn');
-        if(sb){sb.disabled=false;sb.style.opacity='';sb.style.cursor='';setAccentVars(accentCssVar());}
+        if(sb){sb.disabled=false;sb.style.opacity='';sb.style.cursor='';applyAccent();}
       }
     } catch(_){
       var sb=document.getElementById('sliceBtn');
@@ -627,15 +628,8 @@ document.getElementById('modeSelector').addEventListener('click',function(e){
   document.getElementById('speechSlider').value=p.min_speech;
   syncThr(); syncSpeech();
   document.getElementById('modeHint').textContent=MODE_HINTS[state.mode];
-  setAccentVars(accentCssVar());
+  applyAccent();
   buildTracks(state.segments,state.duration);
-  if(state.segments.length) updateInfoPanel({
-    original_duration: state.duration,
-    kept: state.segments.reduce(function(a,s){return a+(s[1]-s[0]);},0),
-    removed: state.duration - state.segments.reduce(function(a,s){return a+(s[1]-s[0]);},0),
-    pct_removed: Math.round((state.duration - state.segments.reduce(function(a,s){return a+(s[1]-s[0]);},0))/state.duration*1000)/10,
-    segments: state.segments.length
-  });
   fetchPreview();
 });
 
@@ -654,7 +648,7 @@ async function doSlice(){
   var sb=document.getElementById('sliceBtn'); sb.disabled=true;
   document.getElementById('statsCard').style.display='none';
   document.getElementById('logBox').innerHTML='';
-  setProgress(5); pushLog('Starting job…');
+  setProgress(0); pushLog('Starting job…');
   try{
     var res=await fetch('/api/process',{
       method:'POST', headers:{'Content-Type':'application/json'},
@@ -668,17 +662,28 @@ async function doSlice(){
     if(!res.ok) throw new Error(data.error);
     state.jobId=data.job_id;
     var sse=new EventSource('/api/logs/'+state.jobId);
+    var _totalSegs=0;
     sse.onmessage=function(e){
       var item=JSON.parse(e.data);
       if(item.done){sse.close();return;}
       pushLog(item.msg,item.level);
+
+      // "Encoding 59 segments (4 workers)…" — grab total, show bar at 0
+      var mTotal=item.msg.match(/Encoding (\d+) segments/);
+      if(mTotal){ _totalSegs=parseInt(mTotal[1]); setProgress(1); }
+
+      // "Encoded 10/59 segments" — 0→100% exclusively
+      var mDone=item.msg.match(/Encoded (\d+)\/(\d+) segments/);
+      if(mDone){
+        var done=parseInt(mDone[1]), total=parseInt(mDone[2])||_totalSegs||1;
+        setProgress(Math.round(done/total * 100));
+      }
     };
     var poll=setInterval(async function(){
       try{
         var sr=await fetch('/api/status/'+state.jobId);
         if(sr.status===404){clearInterval(poll);return;}
         var sd=await sr.json();
-        setProgress(sd.progress||0);
         if(sd.status==='done'){clearInterval(poll);onJobDone(sd.stats);}
         else if(sd.status==='error'){clearInterval(poll);pushLog(sd.error||'Error','error');sb.disabled=false;}
       } catch(_){}
@@ -694,10 +699,9 @@ function onJobDone(stats){
   if(stats){
     showTimeline(stats.segments_list,stats.original_duration);
     updateTimelineMeta(stats);
-    var accent='var('+accentCssVar()+')';
-    document.getElementById('statPct').textContent=stats.pct_removed+'%';   document.getElementById('statPct').style.color=accent;
-    document.getElementById('statCut').textContent=fmtTime(stats.removed);  document.getElementById('statCut').style.color=accent;
-    document.getElementById('statSegs').textContent=stats.segments;          document.getElementById('statSegs').style.color=accent;
+    document.getElementById('statPct').textContent=stats.pct_removed+'%';   document.getElementById('statPct').style.color='var(--accent)';
+    document.getElementById('statCut').textContent=fmtTime(stats.removed);  document.getElementById('statCut').style.color='var(--accent)';
+    document.getElementById('statSegs').textContent=stats.segments;          document.getElementById('statSegs').style.color='var(--accent)';
     document.getElementById('statsCard').style.display='';
     showExportCard();
   }
@@ -721,9 +725,8 @@ function renderActions(phase){
       renderActions('idle');
     });
   } else {
-    var av='var('+accentCssVar()+')';
     area.innerHTML=
-      '<button class="btn-primary" id="sliceBtn"'+(state.fileId?'':' disabled')+' style="background:'+av+';box-shadow:0 2px 16px rgba('+accentRgb()+',.38)">'+
+      '<button class="btn-primary" id="sliceBtn"'+(state.fileId?'':' disabled')+'>'+
         '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 8.12 15.88M14.47 14.48 20 20M8.12 8.12 12 12"/></svg>'+
         'Slice'+
       '</button>';
