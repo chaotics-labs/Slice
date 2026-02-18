@@ -51,7 +51,7 @@ jobs:
   # ───────────────────────────────────────────────────────────────────────────
   build-macos-intel:
     name: macOS (Intel)
-    runs-on: macos-13          # last Intel runner
+    runs-on: macos-13-large          # last Intel runner
     steps:
       - uses: actions/checkout@v4
 
