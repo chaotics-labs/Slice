@@ -1221,3 +1221,48 @@ body {
 /* ── Clickable timeline clips ─────────────────────────────────── */
 .tl-clip { transition: opacity .1s; }
 .tl-clip:hover { opacity: .82; }
+
+
+.dz-path-row {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+  margin-top: 10px;
+  padding: 0 4px;
+}
+.dz-path-input {
+  flex: 1;
+  background: var(--fill-2);
+  border: 1px solid var(--sep);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 11px;
+  color: var(--label-1);
+  font-family: ui-monospace, monospace;
+  outline: none;
+  min-width: 0;
+}
+.dz-path-input:focus { border-color: var(--accent); }
+.dz-path-btn {
+  background: var(--fill-2);
+  border: 1px solid var(--sep);
+  border-radius: 6px;
+  padding: 6px 12px;
+  color: var(--label-1);
+  cursor: pointer;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+.dz-path-btn:hover { background: var(--fill-3); }
+
+.dz-browse-link {
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline;
+  font-size: 11px;
+}
+.dz-path-hint {
+  font-size: 11px;
+  color: var(--label-3);
+  margin-top: 4px;
+}

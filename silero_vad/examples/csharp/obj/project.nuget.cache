@@ -1,0 +1,31 @@
+{
+  "version": 2,
+  "dgSpecHash": "oxoiAZyfals=",
+  "success": false,
+  "projectFilePath": "D:\\VS Projects\\chaotics_slice\\silero_vad\\examples\\csharp\\VadDotNet.csproj",
+  "expectedPackageFiles": [],
+  "logs": [
+    {
+      "code": "NU1101",
+      "level": "Error",
+      "message": "Unable to find package Microsoft.ML.OnnxRuntime. No packages exist with this id in source(s): C:\\Program Files\\dotnet\\library-packs, Microsoft Visual Studio Offline Packages",
+      "projectPath": "D:\\VS Projects\\chaotics_slice\\silero_vad\\examples\\csharp\\VadDotNet.csproj",
+      "filePath": "D:\\VS Projects\\chaotics_slice\\silero_vad\\examples\\csharp\\VadDotNet.csproj",
+      "libraryId": "Microsoft.ML.OnnxRuntime",
+      "targetGraphs": [
+        "net8.0"
+      ]
+    },
+    {
+      "code": "NU1101",
+      "level": "Error",
+      "message": "Unable to find package NAudio. No packages exist with this id in source(s): C:\\Program Files\\dotnet\\library-packs, Microsoft Visual Studio Offline Packages",
+      "projectPath": "D:\\VS Projects\\chaotics_slice\\silero_vad\\examples\\csharp\\VadDotNet.csproj",
+      "filePath": "D:\\VS Projects\\chaotics_slice\\silero_vad\\examples\\csharp\\VadDotNet.csproj",
+      "libraryId": "NAudio",
+      "targetGraphs": [
+        "net8.0"
+      ]
+    }
+  ]
+}

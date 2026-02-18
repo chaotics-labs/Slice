@@ -9,6 +9,7 @@ import threading
 import subprocess
 from pathlib import Path
 from flask import Flask, render_template, request, jsonify, send_file, Response, after_this_request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import queue
 import sys
 import os
@@ -117,8 +118,8 @@ def extract_audio_to(video_path: str, audio_path: str):
     r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode != 0:
         raise RuntimeError(f"FFmpeg audio extract failed: {r.stderr}")
-    elapsed  = time.time() - t0
-    size_mb  = Path(audio_path).stat().st_size / 1e6
+    elapsed = time.time() - t0
+    size_mb = Path(audio_path).stat().st_size / 1e6
     log(f"ffmpeg: audio done in {elapsed:.1f}s  ({size_mb:.1f} MB)")
 
 
@@ -160,37 +161,22 @@ def get_vad():
                 model_dir = os.path.join(
                     os.path.dirname(os.path.abspath(__file__)), 'silero_vad'
                 )
-
             if os.path.isdir(model_dir):
                 log(f"VAD: loading from bundle: {model_dir}")
-                # Compatibilité : certaines versions torch.hub n'acceptent pas source='local'
-                hub_kwargs = dict(
-                    repo_or_dir=model_dir,
-                    model='silero_vad',
-                    force_reload=False,
-                    onnx=False,
-                    verbose=False,
-                    trust_repo=True,
+                _vad_model, _vad_utils = torch.hub.load(
+                    repo_or_dir=model_dir, model='silero_vad',
+                    source='local', force_reload=False,
+                    onnx=False, verbose=False, trust_repo=True,
                 )
-                if hasattr(torch.hub, 'load'):
-                    # certaines versions requièrent explicitement source='local'
-                    hub_kwargs['source'] = 'local'
-                _vad_model, _vad_utils = torch.hub.load(**hub_kwargs)
             else:
                 log("VAD: downloading Silero VAD (first run only)…")
                 _vad_model, _vad_utils = torch.hub.load(
-                    repo_or_dir='snakers4/silero-vad',
-                    model='silero_vad',
-                    source='github',
-                    force_reload=False,
-                    onnx=False,
-                    verbose=True,
-                    trust_repo=True,
+                    repo_or_dir='snakers4/silero-vad', model='silero_vad',
+                    source='github', force_reload=False,
+                    onnx=False, verbose=True, trust_repo=True,
                 )
-
             _vad_model.to(DEVICE)
             log(f"VAD: ready on {DEVICE}")
-
     return _vad_model, _vad_utils
 
 
@@ -198,25 +184,24 @@ def run_vad_on_audio(audio_path, threshold, min_speech_ms, min_silence_ms, paddi
     log(f"VAD: thr={threshold}  min_speech={min_speech_ms}ms  min_silence={min_silence_ms}ms  pad={padding_ms}ms")
     t0 = time.time()
     model, utils = get_vad()
-
-    # Support both old tuple API and new named tuple API
-    if hasattr(utils, 'get_speech_timestamps'):
-        get_speech_ts = utils.get_speech_timestamps
-    else:
-        get_speech_ts = utils[0]
-
+    get_speech_ts = utils.get_speech_timestamps if hasattr(utils, 'get_speech_timestamps') else utils[0]
     wav = load_audio_tensor(audio_path)
     if DEVICE != "cpu":
         wav = wav.to(DEVICE)
-    timestamps = get_speech_ts(
-        wav, model, sampling_rate=16000,
-        threshold=threshold,
-        min_speech_duration_ms=min_speech_ms,
-        min_silence_duration_ms=min_silence_ms,
-        speech_pad_ms=padding_ms,
-        return_seconds=True,
-    )
-    segments = [(t["start"], t["end"]) for t in timestamps]
+    try:
+        timestamps = get_speech_ts(
+            wav, model, sampling_rate=16000,
+            threshold=threshold,
+            min_speech_duration_ms=min_speech_ms,
+            min_silence_duration_ms=min_silence_ms,
+            speech_pad_ms=padding_ms,
+            return_seconds=True,
+        )
+        segments = [(t["start"], t["end"]) for t in timestamps]
+    finally:
+        del wav
+        if DEVICE == "cuda":
+            torch.cuda.empty_cache()
     kept = sum(e - s for s, e in segments)
     log(f"VAD: {len(segments)} segs  {kept:.1f}s speech  ({time.time()-t0:.1f}s)")
     return segments
@@ -296,55 +281,94 @@ def process_job(job_id: str, file_id: str, params: dict):
 
         kept = sum(e - s for s, e in segments)
         push_log(job_id, f"{len(segments)} segments · {kept:.1f}s speech detected", "success")
-        update_job(job_id, progress=45)
+        update_job(job_id, progress=40)
 
-        suffix          = Path(video_path).suffix
-        output_filename = f"{job_id}_sliced{suffix}"
+        output_filename = f"{job_id}_sliced.mp4"
         output_path     = OUTPUT_FOLDER / output_filename
-        push_log(job_id, f"Rendering {len(segments)} segment(s)…")
+        concat_list     = TEMP_FOLDER / f"{job_id}_concat.txt"
+        tmp_files       = [None] * len(segments)
+        completed_count = [0]
+        count_lock      = threading.Lock()
 
-        filter_parts = []
-        for i, (s, e) in enumerate(segments):
-            filter_parts.append(
-                f"[0:v]trim=start={s:.4f}:end={e:.4f},setpts=PTS-STARTPTS[v{i}];"
-                f"[0:a]atrim=start={s:.4f}:end={e:.4f},asetpts=PTS-STARTPTS[a{i}]"
-            )
-        n              = len(segments)
-        interleaved    = "".join(f"[v{i}][a{i}]" for i in range(n))
-        filter_complex = ";".join(filter_parts) + f";{interleaved}concat=n={n}:v=1:a=1[outv][outa]"
+        # Cap at 4 — parallel x264 processes are memory-hungry (especially 4K).
+        # More workers → OOM crashes. 4 is a safe ceiling on most machines.
+        MAX_WORKERS = min(4, max(1, (os.cpu_count() or 4) - 1))
+        log(f"job {job_id}: {len(segments)} segs  workers={MAX_WORKERS}")
+        push_log(job_id, f"Encoding {len(segments)} segments ({MAX_WORKERS} workers)…")
 
-        cmd = [
-            FFMPEG, "-y", "-i", video_path,
-            "-filter_complex", filter_complex,
-            "-map", "[outv]", "-map", "[outa]",
-            "-c:v", "libx264", "-preset", "fast", "-crf", "18",
-            "-c:a", "aac", "-b:a", "192k",
-            str(output_path),
-            "-loglevel", "info", "-stats",
-        ]
+        def encode_segment(i, s, e):
+            tmp_path = TEMP_FOLDER / f"{job_id}_seg{i:04d}.mp4"
+            cmd = [
+                FFMPEG, "-y",
+                "-ss", f"{s:.6f}",
+                "-to", f"{e:.6f}",
+                "-i", video_path,
+                "-c:v", "libx264", "-preset", "ultrafast", "-crf", "18",
+                "-c:a", "aac", "-b:a", "192k",
+                "-avoid_negative_ts", "make_zero",
+                str(tmp_path),
+                "-loglevel", "error",
+            ]
+            t0 = time.time()
+            r  = subprocess.run(cmd, capture_output=True, text=True)
+            if r.returncode != 0:
+                raise RuntimeError(f"Segment {i} failed: {r.stderr[:300]}")
+            log(f"  seg {i+1:03d}/{len(segments)}  {s:.2f}→{e:.2f}  {time.time()-t0:.2f}s")
+            return i, tmp_path
 
-        log(f"job {job_id}: launching ffmpeg → {output_filename}")
-        update_job(job_id, progress=50)
+        try:
+            with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+                futures = {
+                    executor.submit(encode_segment, i, s, e): i
+                    for i, (s, e) in enumerate(segments)
+                }
+                for future in as_completed(futures):
+                    i, tmp_path = future.result()
+                    tmp_files[i] = tmp_path
+                    with count_lock:
+                        completed_count[0] += 1
+                        done = completed_count[0]
+                    pct = 40 + int(done / len(segments) * 50)
+                    update_job(job_id, progress=pct)
+                    if done % 10 == 0 or done == len(segments):
+                        push_log(job_id, f"Encoded {done}/{len(segments)} segments")
 
-        proc = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            text=True, bufsize=1,
-        )
-        for line in proc.stdout:
-            line = line.rstrip()
-            if line:
-                print(f"  ffmpeg | {line}", flush=True)
-        proc.wait()
+            with open(concat_list, "w", encoding="utf-8") as f:
+                for p in tmp_files:
+                    f.write(f"file '{p.as_posix()}'\n")
 
-        if proc.returncode != 0:
-            raise RuntimeError(f"FFmpeg render failed (exit {proc.returncode})")
+            push_log(job_id, "Joining segments…")
+            log(f"job {job_id}: concat → {output_filename}")
+
+            cmd = [
+                FFMPEG, "-y",
+                "-f", "concat", "-safe", "0",
+                "-i", str(concat_list),
+                "-c", "copy",
+                "-movflags", "+faststart",
+                str(output_path),
+                "-loglevel", "error",
+            ]
+            r = subprocess.run(cmd, capture_output=True, text=True)
+            if r.returncode != 0:
+                raise RuntimeError(f"Concat failed: {r.stderr[:300]}")
+
+        finally:
+            for p in tmp_files:
+                if p and Path(p).exists():
+                    try: Path(p).unlink()
+                    except: pass
+            if concat_list.exists():
+                try: concat_list.unlink()
+                except: pass
 
         out_mb = output_path.stat().st_size / 1e6 if output_path.exists() else 0
         log(f"job {job_id}: done  {out_mb:.1f} MB")
 
         stats = compute_stats(segments, duration)
         push_log(job_id, f"{stats['pct_removed']}% removed · {stats['removed']}s cut", "success")
-        update_job(job_id, status="done", progress=100, output_filename=output_filename, stats=stats)
+        update_job(job_id, status="done", progress=100,
+                   output_filename=output_filename, stats=stats)
 
     except Exception as e:
         log(f"job {job_id}: ERROR — {e}")
@@ -362,11 +386,41 @@ def index():
     return render_template("index.html")
 
 
+@app.route("/api/browse")
+def api_browse():
+    """Open a native OS file-picker dialog and return the chosen path."""
+    log("browse: opening file dialog")
+    exts_glob = " ".join(f"*{e}" for e in ALLOWED_EXTENSIONS)
+    script = (
+        "import tkinter as tk; from tkinter import filedialog; "
+        "root = tk.Tk(); root.withdraw(); root.wm_attributes('-topmost', 1); "
+        f"f = filedialog.askopenfilename(title='Select video', "
+        f"filetypes=[('Video files', '{exts_glob}'), ('All files', '*.*')]); "
+        "print(f, end='')"
+    )
+    try:
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True, text=True, timeout=120
+        )
+        path = result.stdout.strip()
+        if not path:
+            log("browse: cancelled")
+            return jsonify({"cancelled": True})
+        log(f"browse: selected → {path}")
+        return jsonify({"path": path})
+    except subprocess.TimeoutExpired:
+        return jsonify({"cancelled": True})
+    except Exception as e:
+        log(f"browse: error — {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/register", methods=["POST"])
 def api_register():
-    """Register a local file by path — zero copy, instant."""
+    """Register a local file by path — zero copy, no upload."""
     body      = request.get_json(force=True)
-    file_path = body.get("path", "").strip()
+    file_path = body.get("path", "").strip().strip('"').strip("'")
     log(f"register: {file_path!r}")
 
     if not file_path:
@@ -380,7 +434,7 @@ def api_register():
 
     suffix = p.suffix.lower()
     if suffix not in ALLOWED_EXTENSIONS:
-        return jsonify({"error": f"Unsupported format: {suffix}"}), 400
+        return jsonify({"error": f"Unsupported format: {suffix}  (supported: {', '.join(ALLOWED_EXTENSIONS)})"}), 400
 
     file_id    = str(uuid.uuid4())[:8]
     audio_path = str(TEMP_FOLDER / f"{file_id}.wav")
@@ -398,7 +452,7 @@ def api_register():
         "duration":   duration,
         "filename":   p.name,
     }
-    log(f"register: ok  file_id={file_id}  {duration:.1f}s")
+    log(f"register: ok  file_id={file_id}  {duration:.1f}s  {p.stat().st_size/1e6:.1f} MB")
     return jsonify({
         "file_id":  file_id,
         "duration": round(duration, 2),
@@ -407,62 +461,74 @@ def api_register():
     })
 
 
-@app.route("/api/upload", methods=["POST"])
-def api_upload():
-    """Fallback upload route (for WSL / remote use)."""
-    if "video" not in request.files:
-        return jsonify({"error": "No video attached"}), 400
-    f      = request.files["video"]
-    suffix = Path(f.filename).suffix.lower()
-    if suffix not in ALLOWED_EXTENSIONS:
-        return jsonify({"error": f"Unsupported format: {suffix}"}), 400
+@app.route("/api/video/<file_id>")
+def api_video(file_id: str):
+    """Stream the registered video file with range-request support for seeking."""
+    sess = file_sessions.get(file_id)
+    if not sess:
+        return jsonify({"error": "Unknown file_id"}), 404
 
-    file_id    = str(uuid.uuid4())[:8]
-    video_path = str(TEMP_FOLDER / f"{file_id}{suffix}")
-    audio_path = str(TEMP_FOLDER / f"{file_id}.wav")
+    video_path = Path(sess["video_path"])
+    if not video_path.exists():
+        return jsonify({"error": "File not found"}), 404
 
-    log(f"upload: receiving {f.filename!r}")
-    chunk_size    = 4 * 1024 * 1024
-    bytes_written = 0
-    t0            = time.time()
-    try:
-        with open(video_path, "wb") as out:
-            while True:
-                chunk = f.stream.read(chunk_size)
-                if not chunk:
-                    break
-                out.write(chunk)
-                bytes_written += len(chunk)
-                mb      = bytes_written / 1e6
-                elapsed = time.time() - t0
-                speed   = mb / elapsed if elapsed > 0 else 0
-                print(f"  upload | {mb:.0f} MB  {speed:.1f} MB/s", end="\r", flush=True)
-    except Exception as e:
-        return jsonify({"error": f"Save failed: {e}"}), 500
-
-    print()  # newline after progress
-    log(f"upload: {bytes_written/1e6:.1f} MB in {time.time()-t0:.1f}s")
-
-    try:
-        duration = get_duration(video_path)
-        extract_audio_to(video_path, audio_path)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-    file_sessions[file_id] = {
-        "video_path": video_path,
-        "audio_path": audio_path,
-        "duration":   duration,
-        "filename":   f.filename,
+    file_size = video_path.stat().st_size
+    suffix    = video_path.suffix.lower()
+    mime_map  = {
+        ".mp4": "video/mp4", ".mkv": "video/x-matroska",
+        ".mov": "video/quicktime", ".avi": "video/x-msvideo",
+        ".webm": "video/webm", ".m4v": "video/mp4", ".flv": "video/x-flv",
     }
-    log(f"upload: ok  file_id={file_id}  {duration:.1f}s")
-    return jsonify({
-        "file_id":  file_id,
-        "duration": round(duration, 2),
-        "filename": f.filename,
-        "size":     bytes_written,
-    })
+    mime = mime_map.get(suffix, "video/mp4")
 
+    range_header = request.headers.get("Range")
+    if range_header:
+        # Parse "bytes=start-end"
+        byte_range = range_header.strip().split("=")[1]
+        start_str, _, end_str = byte_range.partition("-")
+        start = int(start_str) if start_str else 0
+        end   = int(end_str)   if end_str   else file_size - 1
+        end   = min(end, file_size - 1)
+        length = end - start + 1
+
+        def generate_range():
+            with open(video_path, "rb") as f:
+                f.seek(start)
+                remaining = length
+                chunk = 1 << 16  # 64 KB
+                while remaining > 0:
+                    data = f.read(min(chunk, remaining))
+                    if not data:
+                        break
+                    remaining -= len(data)
+                    yield data
+
+        headers = {
+            "Content-Range":  f"bytes {start}-{end}/{file_size}",
+            "Accept-Ranges":  "bytes",
+            "Content-Length": str(length),
+            "Content-Type":   mime,
+        }
+        return Response(generate_range(), status=206, headers=headers)
+
+    # Full file
+    def generate_full():
+        with open(video_path, "rb") as f:
+            while True:
+                data = f.read(1 << 16)
+                if not data:
+                    break
+                yield data
+
+    headers = {
+        "Content-Length": str(file_size),
+        "Accept-Ranges":  "bytes",
+        "Content-Type":   mime,
+    }
+    return Response(generate_full(), status=200, headers=headers)
+
+
+_preview_lock = threading.Lock()
 
 @app.route("/api/preview", methods=["POST"])
 def api_preview():
@@ -470,6 +536,11 @@ def api_preview():
     file_id = body.get("file_id")
     if not file_id or file_id not in file_sessions:
         return jsonify({"error": "Unknown file_id"}), 404
+
+    if not _preview_lock.acquire(blocking=False):
+        log("preview: busy, skipping")
+        return jsonify({"error": "busy"}), 429
+
     sess = file_sessions[file_id]
     log(f"preview: file_id={file_id}")
     try:
@@ -480,6 +551,8 @@ def api_preview():
     except Exception as e:
         log(f"preview error: {e}")
         return jsonify({"error": str(e)}), 500
+    finally:
+        _preview_lock.release()
 
 
 @app.route("/api/process", methods=["POST"])
@@ -533,8 +606,12 @@ def api_download(job_id: str):
     output_path = OUTPUT_FOLDER / job["output_filename"]
     if not output_path.exists():
         return jsonify({"error": "File missing"}), 404
-    download_name = job["output_filename"].replace(job_id + "_", "")
-    log(f"download: {output_path.name}")
+    download_name = "sliced_" + (file_sessions.get(
+        next((fid for fid, s in file_sessions.items()
+              if s.get("video_path","") and job["output_filename"].startswith(job_id)), ""),
+        {}
+    ).get("filename", job["output_filename"].replace(job_id + "_", "")))
+    log(f"download: {output_path.name} → {download_name}")
     @after_this_request
     def cleanup(response):
         purge_output(output_path)
@@ -553,14 +630,6 @@ def open_browser(port=5000):
         print(f"  Open http://127.0.0.1:{port} in your browser")
 
 
-# if __name__ == "__main__":
-#     print()
-#     print(f"  Chaotics Slice  ✂   http://127.0.0.1:5000   [{DEVICE.upper()}]")
-#     print()
-#     Timer(1.5, open_browser).start()
-#     from waitress import serve
-#     serve(app, host="127.0.0.1", port=5000)
-
 PORT = 5001
 
 if __name__ == "__main__":
@@ -568,6 +637,5 @@ if __name__ == "__main__":
     print(f"  Chaotics Slice  ✂   http://127.0.0.1:{PORT}   [{DEVICE.upper()}]")
     print()
     Timer(1.5, lambda: open_browser(port=PORT)).start()
-    # from waitress import serve
-    # serve(app, host="127.0.0.1", port=5001)
-    app.run(host="127.0.0.1", port=PORT, debug=False, threaded=True)
+    from waitress import serve
+    serve(app, host="127.0.0.1", port=PORT, threads=8, channel_timeout=300)

@@ -14,7 +14,6 @@
     <a href="https://lox.rombaut.org" target="_blank" rel="noopener noreferrer">
     <img src="/static/res/Chaotics Logo White.svg" alt="Chaotics" class="brand-logo" />
 </a> Slice
-    <!-- <img src="/static/res/Chaotics Logo White.svg" alt="Chaotics" class="brand-logo" /> Slice -->
     <span class="brand-badge">v1.2</span>
   </div>
   <div class="navbar-right">
@@ -43,11 +42,12 @@
   <!-- ══════════════════════ LEFT SIDEBAR -->
   <aside class="sidebar">
 
-    <!-- Upload -->
+    <!-- Source -->
     <section class="card">
       <h2 class="card-label">Source</h2>
+
+      <!-- Drop zone — click opens native file dialog via backend -->
       <div id="dropZone" class="dropzone">
-        <input type="file" id="fileInput" accept=".mp4,.mkv,.mov,.avi,.webm,.m4v,.flv">
         <div class="dropzone-content">
           <div class="dz-icon-wrap">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
@@ -56,9 +56,11 @@
             </svg>
           </div>
           <span class="dz-title">Drop video here</span>
-          <span class="dz-sub">MP4 · MKV · MOV · AVI · WebM</span>
+          <span class="dz-sub">or click to browse · MP4 · MKV · MOV · AVI · WebM</span>
         </div>
       </div>
+
+      <!-- File pill shown once a file is loaded -->
       <div class="file-pill" id="fileChip">
         <div class="pill-icon" id="chipIcon">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -214,13 +216,11 @@
       <div class="pv-body">
         <div class="pv-video-wrap">
           <video id="previewVideo" playsinline preload="metadata"></video>
-          <!-- Scrub bar overlay -->
           <div class="pv-scrub-bar">
             <div class="pv-scrub-track">
               <div class="pv-playhead-bar" id="pvPlayheadBar"></div>
             </div>
           </div>
-          <!-- Live badge shown when playing -->
           <div class="pv-live-badge" id="pvLiveBadge">
             <span class="pv-live-dot"></span>LIVE PREVIEW
           </div>
