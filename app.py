@@ -14,41 +14,53 @@ import sys
 import os
 import platform
 import webbrowser
+import time
 
 # ── FFmpeg path resolution ─────────────────────────────────────────────────────
-# When running as a PyInstaller one-file bundle, ffmpeg/ffprobe are extracted
-# to sys._MEIPASS. Fall back to PATH when running from source.
-
 def _find_bundled(name: str) -> str:
+    suffix = '.exe' if sys.platform == 'win32' else ''
     if getattr(sys, 'frozen', False):
-        suffix = '.exe' if sys.platform == 'win32' else ''
         candidate = os.path.join(sys._MEIPASS, name + suffix)
         if os.path.isfile(candidate):
+            print(f"[ffmpeg] bundled: {candidate}")
             return candidate
-    return name  # running from source — use PATH
+    local = os.path.join(os.path.dirname(os.path.abspath(__file__)), name + suffix)
+    if os.path.isfile(local):
+        print(f"[ffmpeg] local: {local}")
+        return local
+    import shutil
+    found = shutil.which(name)
+    if found:
+        print(f"[ffmpeg] PATH: {found}")
+        return found
+    raise FileNotFoundError(
+        f"{name} not found. Place {name}{suffix} next to app.py or add to PATH."
+    )
 
 FFMPEG  = _find_bundled('ffmpeg')
 FFPROBE = _find_bundled('ffprobe')
 
 from threading import Timer
 
-# ─── Base directory for PyInstaller or normal run ─────────────────────────────
+# ─── Base directory ───────────────────────────────────────────────────────────
 if getattr(sys, "frozen", False):
-    BASE_DIR = Path(sys._MEIPASS)
+    BUNDLE_DIR = Path(sys._MEIPASS)
+    DATA_DIR   = Path(sys.executable).parent
 else:
-    BASE_DIR = Path(__file__).parent
+    BUNDLE_DIR = Path(__file__).parent
+    DATA_DIR   = Path(__file__).parent
 
 app = Flask(
     __name__,
-    template_folder=str(BASE_DIR / "static"),
-    static_folder=str(BASE_DIR / "static"),
+    template_folder=str(BUNDLE_DIR / "static"),
+    static_folder=str(BUNDLE_DIR / "static"),
 )
-app.config["MAX_CONTENT_LENGTH"] = 4 * 1024 * 1024 * 1024  # 4 GB
+app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024 * 1024  # 8 GB
 
-UPLOAD_FOLDER = BASE_DIR / "uploads"
-OUTPUT_FOLDER = BASE_DIR / "outputs"
-UPLOAD_FOLDER.mkdir(exist_ok=True)
+OUTPUT_FOLDER = DATA_DIR / "outputs"
+TEMP_FOLDER   = DATA_DIR / "temp"
 OUTPUT_FOLDER.mkdir(exist_ok=True)
+TEMP_FOLDER.mkdir(exist_ok=True)
 
 ALLOWED_EXTENSIONS = {".mp4", ".mkv", ".mov", ".avi", ".webm", ".m4v", ".flv"}
 
@@ -73,19 +85,30 @@ elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
 else:
     DEVICE = "cpu"
 
-print(f"[Chaotics Slice] torch={torch.__version__}  device={DEVICE}")
+print(f"[Chaotics Slice] torch={torch.__version__}  device={DEVICE}", flush=True)
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
+def log(msg: str):
+    ts = time.strftime("%H:%M:%S")
+    print(f"[{ts}] {msg}", flush=True)
+
+
 def get_duration(path: str) -> float:
+    log(f"ffprobe: reading duration → {Path(path).name}")
     cmd = [FFPROBE, "-v", "error", "-show_entries", "format=duration", "-of", "json", path]
     result = subprocess.run(cmd, capture_output=True, text=True)
-    return float(json.loads(result.stdout)["format"]["duration"])
+    if result.returncode != 0:
+        raise RuntimeError(f"ffprobe failed: {result.stderr}")
+    dur = float(json.loads(result.stdout)["format"]["duration"])
+    log(f"ffprobe: {dur:.2f}s")
+    return dur
 
 
 def extract_audio_to(video_path: str, audio_path: str):
-    """Extract mono 16 kHz WAV via FFmpeg. No torchaudio I/O used."""
+    log(f"ffmpeg: extracting audio → {Path(audio_path).name}")
+    t0 = time.time()
     cmd = [
         FFMPEG, "-y", "-i", video_path,
         "-ac", "1", "-ar", "16000", "-vn", "-f", "wav", audio_path,
@@ -94,23 +117,20 @@ def extract_audio_to(video_path: str, audio_path: str):
     r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode != 0:
         raise RuntimeError(f"FFmpeg audio extract failed: {r.stderr}")
+    elapsed  = time.time() - t0
+    size_mb  = Path(audio_path).stat().st_size / 1e6
+    log(f"ffmpeg: audio done in {elapsed:.1f}s  ({size_mb:.1f} MB)")
 
 
 def load_audio_tensor(audio_path: str) -> "torch.Tensor":
-    """
-    Load the FFmpeg-produced 16 kHz mono WAV using stdlib `wave`.
-
-    torchaudio >= 2.9 dropped its old file-I/O backends and now requires
-    torchcodec, which most users don't have.  We side-step this entirely:
-    FFmpeg already wrote a plain 16-bit PCM WAV for us, so we read it with
-    the stdlib `wave` module — zero extra dependencies.
-    """
     import wave, array
+    log(f"audio: loading {Path(audio_path).name}")
     with wave.open(audio_path, "rb") as wf:
-        sampwidth = wf.getsampwidth()
+        sampwidth  = wf.getsampwidth()
         n_channels = wf.getnchannels()
-        raw = wf.readframes(wf.getnframes())
-
+        n_frames   = wf.getnframes()
+        raw        = wf.readframes(n_frames)
+    log(f"audio: {n_frames} frames  ch={n_channels}  sw={sampwidth}")
     if sampwidth == 2:
         samples = array.array("h", raw)
         wav = torch.tensor(samples, dtype=torch.float32) / 32768.0
@@ -118,11 +138,10 @@ def load_audio_tensor(audio_path: str) -> "torch.Tensor":
         samples = array.array("i", raw)
         wav = torch.tensor(samples, dtype=torch.float32) / 2147483648.0
     else:
-        raise RuntimeError(f"Unsupported WAV sample width: {sampwidth} bytes")
-
+        raise RuntimeError(f"Unsupported WAV sample width: {sampwidth}")
     if n_channels > 1:
-        wav = wav[::n_channels]  # safety: keep first channel
-
+        wav = wav[::n_channels]
+    log(f"audio: tensor {wav.shape}  ≈{len(wav)/16000:.1f}s")
     return wav
 
 
@@ -135,44 +154,72 @@ def get_vad():
     global _vad_model, _vad_utils
     with _vad_lock:
         if _vad_model is None:
-            print("[Chaotics Slice] Loading Silero VAD model…")
-            _vad_model, _vad_utils = torch.hub.load(
-                repo_or_dir="snakers4/silero-vad",
-                model="silero_vad",
-                force_reload=False,
-                onnx=False,
-                verbose=False,
-                trust_repo=True,
-            )
+            if getattr(sys, 'frozen', False):
+                model_dir = os.path.join(sys._MEIPASS, 'silero_vad')
+            else:
+                model_dir = os.path.join(
+                    os.path.dirname(os.path.abspath(__file__)), 'silero_vad'
+                )
+
+            if os.path.isdir(model_dir):
+                log(f"VAD: loading from bundle: {model_dir}")
+                # Compatibilité : certaines versions torch.hub n'acceptent pas source='local'
+                hub_kwargs = dict(
+                    repo_or_dir=model_dir,
+                    model='silero_vad',
+                    force_reload=False,
+                    onnx=False,
+                    verbose=False,
+                    trust_repo=True,
+                )
+                if hasattr(torch.hub, 'load'):
+                    # certaines versions requièrent explicitement source='local'
+                    hub_kwargs['source'] = 'local'
+                _vad_model, _vad_utils = torch.hub.load(**hub_kwargs)
+            else:
+                log("VAD: downloading Silero VAD (first run only)…")
+                _vad_model, _vad_utils = torch.hub.load(
+                    repo_or_dir='snakers4/silero-vad',
+                    model='silero_vad',
+                    source='github',
+                    force_reload=False,
+                    onnx=False,
+                    verbose=True,
+                    trust_repo=True,
+                )
+
             _vad_model.to(DEVICE)
-            print(f"[Chaotics Slice] VAD model ready on {DEVICE}.")
+            log(f"VAD: ready on {DEVICE}")
+
     return _vad_model, _vad_utils
 
 
-def run_vad_on_audio(
-    audio_path: str,
-    threshold: float,
-    min_speech_ms: int,
-    min_silence_ms: int,
-    padding_ms: int,
-):
+def run_vad_on_audio(audio_path, threshold, min_speech_ms, min_silence_ms, padding_ms):
+    log(f"VAD: thr={threshold}  min_speech={min_speech_ms}ms  min_silence={min_silence_ms}ms  pad={padding_ms}ms")
+    t0 = time.time()
     model, utils = get_vad()
-    get_speech_ts = utils[0]   # avoid unpacking read_audio — it's broken in torchaudio>=2.9
+
+    # Support both old tuple API and new named tuple API
+    if hasattr(utils, 'get_speech_timestamps'):
+        get_speech_ts = utils.get_speech_timestamps
+    else:
+        get_speech_ts = utils[0]
 
     wav = load_audio_tensor(audio_path)
     if DEVICE != "cpu":
         wav = wav.to(DEVICE)
-
     timestamps = get_speech_ts(
-        wav, model,
-        sampling_rate=16000,
+        wav, model, sampling_rate=16000,
         threshold=threshold,
         min_speech_duration_ms=min_speech_ms,
         min_silence_duration_ms=min_silence_ms,
         speech_pad_ms=padding_ms,
         return_seconds=True,
     )
-    return [(t["start"], t["end"]) for t in timestamps]
+    segments = [(t["start"], t["end"]) for t in timestamps]
+    kept = sum(e - s for s, e in segments)
+    log(f"VAD: {len(segments)} segs  {kept:.1f}s speech  ({time.time()-t0:.1f}s)")
+    return segments
 
 
 def parse_params(data: dict) -> dict:
@@ -188,15 +235,11 @@ def parse_params(data: dict) -> dict:
         preset      = MODE_PRESETS.get(mode, MODE_PRESETS["normal"])
         min_silence = preset["min_silence"]
         padding     = preset["padding"]
-    return dict(
-        threshold=threshold,
-        min_speech_ms=min_speech,
-        min_silence_ms=min_silence,
-        padding_ms=padding,
-    )
+    return dict(threshold=threshold, min_speech_ms=min_speech,
+                min_silence_ms=min_silence, padding_ms=padding)
 
 
-def compute_stats(segments: list, duration: float) -> dict:
+def compute_stats(segments, duration):
     kept    = sum(e - s for s, e in segments)
     removed = duration - kept
     pct     = round((removed / duration * 100) if duration > 0 else 0, 1)
@@ -210,34 +253,22 @@ def compute_stats(segments: list, duration: float) -> dict:
     }
 
 
-def push_log(job_id: str, msg: str, level: str = "info"):
+def push_log(job_id, msg, level="info"):
+    log(f"[job {job_id}] {msg}")
     if job_id in job_logs:
         job_logs[job_id].put({"msg": msg, "level": level})
 
 
-def update_job(job_id: str, **kw):
+def update_job(job_id, **kw):
     if job_id in jobs:
         jobs[job_id].update(kw)
-
-
-def purge_uploads():
-    for sess in file_sessions.values():
-        for key in ("video_path", "audio_path"):
-            p = Path(sess.get(key, ""))
-            if p.exists():
-                try: p.unlink()
-                except OSError: pass
-    file_sessions.clear()
-    for f in UPLOAD_FOLDER.iterdir():
-        if f.is_file():
-            try: f.unlink()
-            except OSError: pass
 
 
 def purge_output(output_path: Path):
     try:
         if output_path.exists():
             output_path.unlink()
+            log(f"cleanup: {output_path.name}")
     except OSError:
         pass
 
@@ -251,6 +282,7 @@ def process_job(job_id: str, file_id: str, params: dict):
         audio_path = sess["audio_path"]
         duration   = sess["duration"]
 
+        log(f"job {job_id}: start  {Path(video_path).name}  {duration:.1f}s")
         update_job(job_id, status="running", progress=10)
         push_log(job_id,
             f"VAD — threshold={params['threshold']}  "
@@ -260,7 +292,7 @@ def process_job(job_id: str, file_id: str, params: dict):
 
         segments = run_vad_on_audio(audio_path, **params)
         if not segments:
-            raise RuntimeError("No speech detected. Try lowering threshold or switching to Chill mode.")
+            raise RuntimeError("No speech detected. Try lowering threshold or Chill mode.")
 
         kept = sum(e - s for s, e in segments)
         push_log(job_id, f"{len(segments)} segments · {kept:.1f}s speech detected", "success")
@@ -287,19 +319,35 @@ def process_job(job_id: str, file_id: str, params: dict):
             "-map", "[outv]", "-map", "[outa]",
             "-c:v", "libx264", "-preset", "fast", "-crf", "18",
             "-c:a", "aac", "-b:a", "192k",
-            str(output_path), "-loglevel", "error",
+            str(output_path),
+            "-loglevel", "info", "-stats",
         ]
 
+        log(f"job {job_id}: launching ffmpeg → {output_filename}")
         update_job(job_id, progress=50)
-        r = subprocess.run(cmd, capture_output=True, text=True)
-        if r.returncode != 0:
-            raise RuntimeError(f"FFmpeg render failed: {r.stderr[:400]}")
+
+        proc = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, bufsize=1,
+        )
+        for line in proc.stdout:
+            line = line.rstrip()
+            if line:
+                print(f"  ffmpeg | {line}", flush=True)
+        proc.wait()
+
+        if proc.returncode != 0:
+            raise RuntimeError(f"FFmpeg render failed (exit {proc.returncode})")
+
+        out_mb = output_path.stat().st_size / 1e6 if output_path.exists() else 0
+        log(f"job {job_id}: done  {out_mb:.1f} MB")
 
         stats = compute_stats(segments, duration)
         push_log(job_id, f"{stats['pct_removed']}% removed · {stats['removed']}s cut", "success")
         update_job(job_id, status="done", progress=100, output_filename=output_filename, stats=stats)
 
     except Exception as e:
+        log(f"job {job_id}: ERROR — {e}")
         push_log(job_id, f"Error: {e}", "error")
         update_job(job_id, status="error", error=str(e))
     finally:
@@ -314,31 +362,106 @@ def index():
     return render_template("index.html")
 
 
+@app.route("/api/register", methods=["POST"])
+def api_register():
+    """Register a local file by path — zero copy, instant."""
+    body      = request.get_json(force=True)
+    file_path = body.get("path", "").strip()
+    log(f"register: {file_path!r}")
+
+    if not file_path:
+        return jsonify({"error": "No path provided"}), 400
+
+    p = Path(file_path)
+    if not p.exists():
+        return jsonify({"error": f"File not found: {file_path}"}), 404
+    if not p.is_file():
+        return jsonify({"error": "Path is not a file"}), 400
+
+    suffix = p.suffix.lower()
+    if suffix not in ALLOWED_EXTENSIONS:
+        return jsonify({"error": f"Unsupported format: {suffix}"}), 400
+
+    file_id    = str(uuid.uuid4())[:8]
+    audio_path = str(TEMP_FOLDER / f"{file_id}.wav")
+
+    try:
+        duration = get_duration(str(p))
+        extract_audio_to(str(p), audio_path)
+    except Exception as e:
+        log(f"register: failed — {e}")
+        return jsonify({"error": str(e)}), 500
+
+    file_sessions[file_id] = {
+        "video_path": str(p),
+        "audio_path": audio_path,
+        "duration":   duration,
+        "filename":   p.name,
+    }
+    log(f"register: ok  file_id={file_id}  {duration:.1f}s")
+    return jsonify({
+        "file_id":  file_id,
+        "duration": round(duration, 2),
+        "filename": p.name,
+        "size":     p.stat().st_size,
+    })
+
+
 @app.route("/api/upload", methods=["POST"])
 def api_upload():
+    """Fallback upload route (for WSL / remote use)."""
     if "video" not in request.files:
         return jsonify({"error": "No video attached"}), 400
     f      = request.files["video"]
     suffix = Path(f.filename).suffix.lower()
     if suffix not in ALLOWED_EXTENSIONS:
         return jsonify({"error": f"Unsupported format: {suffix}"}), 400
-    purge_uploads()
+
     file_id    = str(uuid.uuid4())[:8]
-    video_path = str(UPLOAD_FOLDER / f"{file_id}{suffix}")
-    audio_path = str(UPLOAD_FOLDER / f"{file_id}.wav")
-    f.save(video_path)
+    video_path = str(TEMP_FOLDER / f"{file_id}{suffix}")
+    audio_path = str(TEMP_FOLDER / f"{file_id}.wav")
+
+    log(f"upload: receiving {f.filename!r}")
+    chunk_size    = 4 * 1024 * 1024
+    bytes_written = 0
+    t0            = time.time()
+    try:
+        with open(video_path, "wb") as out:
+            while True:
+                chunk = f.stream.read(chunk_size)
+                if not chunk:
+                    break
+                out.write(chunk)
+                bytes_written += len(chunk)
+                mb      = bytes_written / 1e6
+                elapsed = time.time() - t0
+                speed   = mb / elapsed if elapsed > 0 else 0
+                print(f"  upload | {mb:.0f} MB  {speed:.1f} MB/s", end="\r", flush=True)
+    except Exception as e:
+        return jsonify({"error": f"Save failed: {e}"}), 500
+
+    print()  # newline after progress
+    log(f"upload: {bytes_written/1e6:.1f} MB in {time.time()-t0:.1f}s")
+
     try:
         duration = get_duration(video_path)
         extract_audio_to(video_path, audio_path)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
     file_sessions[file_id] = {
         "video_path": video_path,
         "audio_path": audio_path,
         "duration":   duration,
         "filename":   f.filename,
     }
-    return jsonify({"file_id": file_id, "duration": round(duration, 2), "filename": f.filename})
+    log(f"upload: ok  file_id={file_id}  {duration:.1f}s")
+    return jsonify({
+        "file_id":  file_id,
+        "duration": round(duration, 2),
+        "filename": f.filename,
+        "size":     bytes_written,
+    })
 
 
 @app.route("/api/preview", methods=["POST"])
@@ -348,12 +471,14 @@ def api_preview():
     if not file_id or file_id not in file_sessions:
         return jsonify({"error": "Unknown file_id"}), 404
     sess = file_sessions[file_id]
+    log(f"preview: file_id={file_id}")
     try:
         p        = parse_params(body)
         segments = run_vad_on_audio(sess["audio_path"], **p)
         stats    = compute_stats(segments, sess["duration"])
         return jsonify({"ok": True, "stats": stats})
     except Exception as e:
+        log(f"preview error: {e}")
         return jsonify({"error": str(e)}), 500
 
 
@@ -367,6 +492,7 @@ def api_process():
     job_id = str(uuid.uuid4())[:8]
     jobs[job_id]     = {"status": "queued", "progress": 0}
     job_logs[job_id] = queue.Queue()
+    log(f"process: job={job_id}  file={file_id}")
     t = threading.Thread(target=process_job, args=(job_id, file_id, params), daemon=True)
     t.start()
     return jsonify({"job_id": job_id})
@@ -408,6 +534,7 @@ def api_download(job_id: str):
     if not output_path.exists():
         return jsonify({"error": "File missing"}), 404
     download_name = job["output_filename"].replace(job_id + "_", "")
+    log(f"download: {output_path.name}")
     @after_this_request
     def cleanup(response):
         purge_output(output_path)
@@ -419,17 +546,28 @@ def api_download(job_id: str):
 
 # ─── Run ──────────────────────────────────────────────────────────────────────
 
-def open_browser():
+def open_browser(port=5000):
     if platform.system() in ("Windows", "Darwin"):
-        webbrowser.open("http://127.0.0.1:5000")
+        webbrowser.open(f"http://127.0.0.1:{port}")
     else:
-        print("  Open http://127.0.0.1:5000 in your browser")
+        print(f"  Open http://127.0.0.1:{port} in your browser")
 
+
+# if __name__ == "__main__":
+#     print()
+#     print(f"  Chaotics Slice  ✂   http://127.0.0.1:5000   [{DEVICE.upper()}]")
+#     print()
+#     Timer(1.5, open_browser).start()
+#     from waitress import serve
+#     serve(app, host="127.0.0.1", port=5000)
+
+PORT = 5001
 
 if __name__ == "__main__":
     print()
-    print(f"  Chaotics Slice  ✂   http://127.0.0.1:5000   [{DEVICE.upper()}]")
+    print(f"  Chaotics Slice  ✂   http://127.0.0.1:{PORT}   [{DEVICE.upper()}]")
     print()
-    Timer(1.5, open_browser).start()
-    from waitress import serve
-    serve(app, host="127.0.0.1", port=5000)
+    Timer(1.5, lambda: open_browser(port=PORT)).start()
+    # from waitress import serve
+    # serve(app, host="127.0.0.1", port=5001)
+    app.run(host="127.0.0.1", port=PORT, debug=False, threaded=True)

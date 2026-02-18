@@ -1,8 +1,22 @@
-import torch
-from silero_vad import load_silero_vad, read_audio, get_speech_timestamps
+import sys, os
+sys.path.insert(0, '.')
+print('Python:', sys.version)
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model = load_silero_vad().to(device)
-wav = read_audio("input.wav")
-speech_timestamps = get_speech_timestamps(wav, model, sampling_rate=16000, device=device)
-print(speech_timestamps)
+print('Testing flask...')
+from flask import Flask
+print('  OK')
+
+print('Testing torch...')
+import torch
+print('  OK:', torch.__version__)
+
+print('Testing waitress...')
+from waitress import serve
+print('  OK')
+
+print('Testing ffmpeg detection...')
+import shutil
+print('  ffmpeg:', shutil.which('ffmpeg') or 'NOT FOUND in PATH')
+import pathlib
+local = pathlib.Path('ffmpeg.exe')
+print('  ffmpeg.exe next to app.py:', local.exists())

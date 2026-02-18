@@ -24,11 +24,28 @@ jobs:
       - name: Install FFmpeg
         run: brew install ffmpeg
 
+      - name: Stage FFmpeg for bundling
+        run: |
+          cp $(which ffmpeg) ./ffmpeg
+          cp $(which ffprobe) ./ffprobe
+          
       - name: Install Python deps
         run: |
           pip install --upgrade pip
           pip install torch torchvision torchaudio
           pip install flask waitress pyinstaller
+
+      - name: Pre-download Silero VAD model
+        run: |
+          python -c "
+          import torch, shutil, os
+          torch.hub.load('snakers4/silero-vad', 'silero_vad', trust_repo=True)
+          hub_dir = torch.hub.get_dir()
+          # Find the silero folder (name varies slightly)
+          src = next(p for p in os.listdir(hub_dir) if 'silero' in p.lower())
+          shutil.copytree(os.path.join(hub_dir, src), 'silero_vad')
+          print('Staged:', os.listdir('silero_vad'))
+          "
 
       - name: Build
         run: pyinstaller chaotics_slice.spec --noconfirm
@@ -55,10 +72,15 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install FFmpeg
+      - name: Download and stage FFmpeg for bundling
         run: |
-          choco install ffmpeg -y
-          echo "C:\ProgramData\chocolatey\bin" >> $env:GITHUB_PATH
+          $url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
+          Invoke-WebRequest -Uri $url -OutFile ffmpeg.zip
+          Expand-Archive ffmpeg.zip -DestinationPath ffmpeg_tmp
+          $bin = Get-ChildItem -Recurse -Filter "ffmpeg.exe" ffmpeg_tmp | Select-Object -First 1
+          Copy-Item $bin.FullName -Destination ffmpeg.exe
+          $bin2 = Get-ChildItem -Recurse -Filter "ffprobe.exe" ffmpeg_tmp | Select-Object -First 1
+          Copy-Item $bin2.FullName -Destination ffprobe.exe
         shell: pwsh
 
       - name: Install Python deps
@@ -66,6 +88,30 @@ jobs:
           pip install --upgrade pip
           pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
           pip install flask waitress pyinstaller
+
+      - name: Pre-download Silero VAD model
+        run: |
+          python -c "
+          import torch, shutil, os
+          torch.hub.load('snakers4/silero-vad', 'silero_vad', trust_repo=True)
+          hub_dir = torch.hub.get_dir()
+          # Find the silero folder (name varies slightly)
+          src = next(p for p in os.listdir(hub_dir) if 'silero' in p.lower())
+          shutil.copytree(os.path.join(hub_dir, src), 'silero_vad')
+          print('Staged:', os.listdir('silero_vad'))
+          "
+
+      - name: Pre-download Silero VAD model
+        run: |
+          python -c "
+          import torch, shutil, os
+          torch.hub.load('snakers4/silero-vad', 'silero_vad', trust_repo=True)
+          hub_dir = torch.hub.get_dir()
+          # Find the silero folder (name varies slightly)
+          src = next(p for p in os.listdir(hub_dir) if 'silero' in p.lower())
+          shutil.copytree(os.path.join(hub_dir, src), 'silero_vad')
+          print('Staged:', os.listdir('silero_vad'))
+          "
 
       - name: Build
         run: pyinstaller chaotics_slice.spec --noconfirm
@@ -97,6 +143,11 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y ffmpeg
+
+      - name: Stage FFmpeg for bundling
+        run: |
+          cp $(which ffmpeg) ./ffmpeg
+          cp $(which ffprobe) ./ffprobe
 
       - name: Install Python deps
         run: |

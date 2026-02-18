@@ -62,7 +62,6 @@ function fmtTime(s) {
   if (m > 0) return m+':'+String(sec).padStart(2,'0');
   return s < 10 ? s.toFixed(1)+'s' : sec+'s';
 }
-
 function toTimecode(secs, fps) {
   fps = fps || 25;
   var tf = Math.round(secs * fps);
@@ -71,7 +70,6 @@ function toTimecode(secs, fps) {
   var ss = ts % 60, mm = Math.floor(ts/60) % 60, hh = Math.floor(ts/3600);
   return String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0')+':'+String(ss).padStart(2,'0')+':'+String(fr).padStart(2,'0');
 }
-
 function setAccentVars(accentStr) {
   ['thrFill','speechFill','progressFill'].forEach(function(id){
     var el = document.getElementById(id);
@@ -146,13 +144,11 @@ function initSlider(sliderId, fillId, valId, min, max, fmt) {
   function update() {
     var pct = (parseFloat(slider.value)-min)/(max-min)*100;
     fill.style.width  = pct+'%';
-    // fill et val en label (noir/blanc) — plus d'accent ici
     valEl.textContent = fmt(slider.value);
   }
   slider.addEventListener('input', function(){ update(); fetchPreview(); });
   return update;
 }
-
 var syncThr    = initSlider('thrSlider','thrFill','thrVal',0.1,0.9,function(v){ return parseFloat(v).toFixed(2); });
 var syncSpeech = initSlider('speechSlider','speechFill','speechVal',50,800,function(v){ return v+' ms'; });
 syncThr(); syncSpeech();
@@ -188,7 +184,6 @@ function buildTracks(segs, dur) {
   });
   if (!dur) return;
   var color = accentColor();
-
   segs.forEach(function(seg, idx) {
     var s = seg[0], e = seg[1];
     var lp = s/dur*100, wp = (e-s)/dur*100;
@@ -200,7 +195,7 @@ function buildTracks(segs, dur) {
     clip.style.background = color;
     clip.style.cursor = 'pointer';
     clip.style.pointerEvents = 'auto';
-    clip.title = 'Click to preview from this segment';
+    clip.title = 'Click to preview';
     clip.dataset.segIdx = idx;
     clip.addEventListener('click', function(ev){
       ev.stopPropagation();
@@ -212,8 +207,6 @@ function buildTracks(segs, dur) {
     clip.appendChild(lh); clip.appendChild(rh);
     trackKept.appendChild(clip);
   });
-
-  // Gaps
   var gaps = [];
   if (segs.length === 0) {
     gaps.push([0, dur]);
@@ -300,17 +293,19 @@ function updateTimelineMeta(stats) {
   });
 })();
 
-// ── Upload ────────────────────────────────────────────────────────────────────
+// ── File handling — path registration (no upload!) ────────────────────────────
 var dropZone  = document.getElementById('dropZone');
 var fileInput = document.getElementById('fileInput');
 var fileChip  = document.getElementById('fileChip');
 
-fileInput.addEventListener('change', function(){ if (fileInput.files[0]) uploadFile(fileInput.files[0]); });
+fileInput.addEventListener('change', function(){
+  if (fileInput.files[0]) handleFile(fileInput.files[0]);
+});
 dropZone.addEventListener('dragover', function(e){ e.preventDefault(); dropZone.classList.add('drag'); });
 dropZone.addEventListener('dragleave', function(){ dropZone.classList.remove('drag'); });
 dropZone.addEventListener('drop', function(e){
   e.preventDefault(); dropZone.classList.remove('drag');
-  if (e.dataTransfer.files[0]) uploadFile(e.dataTransfer.files[0]);
+  if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
 });
 document.getElementById('chipClear').addEventListener('click', resetState);
 
@@ -337,76 +332,162 @@ function resetState() {
 }
 
 var _videoObjectUrl = null;
+var _currentFile    = null;
 
-async function uploadFile(f) {
+function setChipLoading() {
+  document.getElementById('chipIcon').innerHTML =
+    '<div class="spin" style="color:var(--accent)"></div>';
+}
+
+function setChipReady() {
+  document.getElementById('chipIcon').innerHTML =
+    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="15" rx="2"/><polyline points="17 2 12 7 7 2"/></svg>';
+  document.getElementById('chipIcon').style.color = 'var(--accent)';
+}
+
+function setChipError() {
+  document.getElementById('chipIcon').innerHTML =
+    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>';
+}
+
+async function handleFile(f) {
+  _currentFile = f;
   dropZone.style.display = 'none';
   fileChip.classList.add('show');
   document.getElementById('chipName').textContent = f.name;
   document.getElementById('chipSize').textContent = fmtBytes(f.size);
-  document.getElementById('chipIcon').innerHTML   = '<div class="spin" style="color:var(--accent)"></div>';
   document.getElementById('logBox').innerHTML = '';
   state.filename = f.name.replace(/\.[^.]+$/, '');
-  pushLog('Uploading '+f.name+'…');
 
+  setChipLoading();
+  pushLog('Reading ' + f.name + ' (' + fmtBytes(f.size) + ')…');
+
+  // Create local object URL for preview — instant, no transfer
   if (_videoObjectUrl) URL.revokeObjectURL(_videoObjectUrl);
   _videoObjectUrl = URL.createObjectURL(f);
 
-  var fd = new FormData();
-  fd.append('video', f);
-  try {
-    var res  = await fetch('/api/upload', { method: 'POST', body: fd });
-    var data = await res.json();
-    if (!res.ok) throw new Error(data.error);
-    state.fileId   = data.file_id;
-    state.duration = data.duration;
-    document.getElementById('chipIcon').innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="15" rx="2"/><polyline points="17 2 12 7 7 2"/></svg>';
-    document.getElementById('chipIcon').style.color = 'var(--accent)';
-    setupVideoPreview(_videoObjectUrl);
-    pushLog('Ready — '+fmtTime(data.duration)+' detected', 'success');
-    document.getElementById('sliceBtn').disabled = false;
-    setAccentVars(accentCssVar());
-    fetchPreview();
-  } catch(e) {
-    pushLog('Upload failed: '+e.message, 'error');
-    document.getElementById('chipIcon').innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>';
+  // Try path-based registration first (Windows native — zero copy)
+  // f.path is set by Electron / some browsers when running locally
+  var localPath = f.path || (f.webkitRelativePath ? null : null);
+
+  // For a local Flask app opened in a normal browser, we use the File's
+  // name + a path hint via webkitGetAsEntry or just try registering by path.
+  // On Windows the file input gives us f.path in most Chromium builds.
+  if (localPath) {
+    pushLog('Using local path (no upload needed)…');
+    var ok = await tryRegisterPath(localPath, f);
+    if (ok) return;
+    pushLog('Path registration failed, falling back to upload…', 'info');
   }
+
+  // Fallback: XHR upload with progress
+  await uploadFileXHR(f);
+}
+
+async function tryRegisterPath(filePath, f) {
+  try {
+    var res  = await fetch('/api/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: filePath })
+    });
+    var data = await res.json();
+    if (!res.ok) {
+      pushLog('Register: ' + (data.error || 'failed'), 'error');
+      return false;
+    }
+    onFileReady(data, f);
+    return true;
+  } catch(e) {
+    return false;
+  }
+}
+
+function uploadFileXHR(f) {
+  return new Promise(function(resolve) {
+    pushLog('Uploading ' + f.name + '… (this may take a moment for large files)');
+    setProgress(1);
+
+    var fd = new FormData();
+    fd.append('video', f);
+    var xhr = new XMLHttpRequest();
+
+    xhr.upload.addEventListener('progress', function(e) {
+      if (!e.lengthComputable) return;
+      var pct = Math.round(e.loaded / e.total * 100);
+      setProgress(pct * 0.7); // upload = 0–70% of progress bar
+      document.getElementById('chipIcon').innerHTML =
+        '<span style="font-size:10px;font-weight:700;color:var(--accent);font-family:-apple-system,sans-serif;">' + pct + '%</span>';
+    });
+
+    xhr.addEventListener('load', function() {
+      setProgress(0);
+      if (xhr.status !== 200) {
+        var msg = 'Upload failed';
+        try { msg = JSON.parse(xhr.responseText).error || msg; } catch(_) {}
+        pushLog(msg, 'error');
+        setChipError();
+        return resolve(false);
+      }
+      try {
+        var data = JSON.parse(xhr.responseText);
+        onFileReady(data, f);
+        resolve(true);
+      } catch(e) {
+        pushLog('Parse error: ' + e.message, 'error');
+        setChipError();
+        resolve(false);
+      }
+    });
+
+    xhr.addEventListener('error', function() {
+      pushLog('Network error during upload', 'error');
+      setChipError();
+      resolve(false);
+    });
+
+    xhr.timeout = 20 * 60 * 1000; // 20 min
+    xhr.addEventListener('timeout', function() {
+      pushLog('Upload timed out', 'error');
+      setChipError();
+      resolve(false);
+    });
+
+    xhr.open('POST', '/api/upload');
+    xhr.send(fd);
+  });
+}
+
+function onFileReady(data, f) {
+  state.fileId   = data.file_id;
+  state.duration = data.duration;
+  setChipReady();
+  setupVideoPreview(_videoObjectUrl);
+  pushLog('Ready — ' + fmtTime(data.duration) + ' · ' + fmtBytes(data.size || f.size), 'success');
+  document.getElementById('sliceBtn').disabled = false;
+  setAccentVars(accentCssVar());
+  fetchPreview();
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
 // ── Double-Buffer Video Engine ────────────────────────────────────────────────
 // ══════════════════════════════════════════════════════════════════════════════
-//
-// Two <video> elements stacked absolutely inside the same container.
-// Both share the same object URL. We use opacity (not display:none) so the
-// browser keeps the hidden buffer alive and decoded.
-//
-// While buffer A plays, buffer B silently seeks to the next segment start.
-// On cut: swap opacity in one frame — no black flash, no reflow, no zoom.
-//
 var db = (function () {
   var _els      = [null, null];
-  var _active   = 0;            // index of the currently visible buffer
-  var _ready    = [false, false]; // has each idle buffer finished its preseek?
+  var _active   = 0;
+  var _ready    = [false, false];
 
   function _idle() { return 1 - _active; }
 
-  // ── Init: grab existing <video> as slot 0, create slot 1 ─────────────────
   function _init() {
     var ref = document.getElementById('previewVideo');
     var container = ref.parentNode;
-
-    // Make container a stacking context
     container.style.position = 'relative';
     container.style.overflow = 'hidden';
-    // Give the container an explicit height if it has none (prevents collapse)
-    if (!container.style.height && container.offsetHeight === 0) {
-      container.style.height = ref.style.height || '100%';
-    }
 
     _els[0] = ref;
     _els[1] = document.createElement('video');
 
-    // Apply identical base styles to both elements
     [0, 1].forEach(function (i) {
       var el = _els[i];
       el.style.position   = 'absolute';
@@ -414,8 +495,8 @@ var db = (function () {
       el.style.left       = '0';
       el.style.width      = '100%';
       el.style.height     = '100%';
-      el.style.objectFit  = 'contain';   // ← no zoom / crop
-      el.style.background = 'transparent'; // ← no black rectangle
+      el.style.objectFit  = 'contain';
+      el.style.background = 'transparent';
       el.preload          = 'auto';
       el.style.transition = 'opacity 0.05s linear';
     });
@@ -424,7 +505,6 @@ var db = (function () {
     _els[1].style.opacity = '0';
     container.appendChild(_els[1]);
 
-    // Shared event listeners
     [0, 1].forEach(function (i) {
       _els[i].addEventListener('timeupdate', function () {
         if (i !== _active) return;
@@ -441,7 +521,6 @@ var db = (function () {
     });
   }
 
-  // ── Load: set the same src on both buffers ────────────────────────────────
   function load(src) {
     _ready  = [false, false];
     _active = 0;
@@ -453,16 +532,13 @@ var db = (function () {
     _els[1].style.opacity = '0';
   }
 
-  // ── Preseek: silently move idle buffer to segment start ───────────────────
   function preseek(idx) {
     if (!state.segments[idx]) return;
     var i  = _idle();
     var t  = state.segments[idx][0];
     _ready[i] = false;
 
-    function doSeek() {
-      _els[i].currentTime = t;
-    }
+    function doSeek() { _els[i].currentTime = t; }
 
     if (_els[i].readyState >= 1) {
       doSeek();
@@ -472,38 +548,30 @@ var db = (function () {
         doSeek();
       });
     }
-
     _els[i].addEventListener('seeked', function onSeeked() {
       _els[i].removeEventListener('seeked', onSeeked);
       _ready[i] = true;
     });
   }
 
-  // ── Seek: move active buffer directly (for manual scrub without swap) ─────
-  function seek(t) {
-    _els[_active].currentTime = t;
-  }
+  function seek(t) { _els[_active].currentTime = t; }
 
-  // ── Cut: swap to idle buffer at segment idx, call cb when playing ─────────
   function cut(idx, cb) {
     if (!state.segments[idx]) return;
     var i      = _idle();
     var target = state.segments[idx][0];
 
     function doSwap() {
-      // Atomic visual swap
       _els[_active].style.opacity = '0';
       _els[i].style.opacity       = '1';
       _els[_active].pause();
       _active = i;
-
       state.currentSegIdx = idx;
       updateSegCounter();
       highlightActiveClip(idx);
-
       _els[_active].play().then(function () {
         if (cb) cb();
-        preseek(idx + 1);   // start preseek for the segment after this one
+        preseek(idx + 1);
       }).catch(function (e) {
         pushLog('Preview error: ' + e.message, 'error');
         state.previewActive = false;
@@ -512,12 +580,9 @@ var db = (function () {
     }
 
     if (_ready[i]) {
-      // Best case: idle buffer already seeked — instant swap
       doSwap();
     } else {
-      // Fallback: seek idle now, swap on seeked event (or timeout)
       var done = false;
-
       function onSeeked() {
         if (done) return;
         done = true;
@@ -525,9 +590,7 @@ var db = (function () {
         _ready[i] = true;
         doSwap();
       }
-
       _els[i].addEventListener('seeked', onSeeked);
-
       if (_els[i].readyState >= 1) {
         _els[i].currentTime = target;
       } else {
@@ -536,13 +599,10 @@ var db = (function () {
           _els[i].currentTime = target;
         });
       }
-
-      // Safety net: if seeking takes > 400ms, seek active buffer instead
       setTimeout(function () {
         if (done) return;
         done = true;
         _els[i].removeEventListener('seeked', onSeeked);
-        // Give up on swap, just seek the active buffer
         _els[_active].currentTime = target;
         state.currentSegIdx = idx;
         updateSegCounter();
@@ -556,7 +616,6 @@ var db = (function () {
   function play()        { return _els[_active].play(); }
   function pause()       { _els[_active].pause(); }
   function currentTime() { return _els[_active].currentTime; }
-
   function stop() {
     [0, 1].forEach(function (i) {
       if (_els[i]) { _els[i].pause(); _els[i].removeAttribute('src'); _els[i].load(); }
@@ -565,11 +624,10 @@ var db = (function () {
   }
 
   _init();
-
   return { load: load, preseek: preseek, seek: seek, cut: cut, play: play, pause: pause, currentTime: currentTime, stop: stop };
 })();
 
-// ── Video Preview Player ───────────────────────────────────────────────────────
+// ── Video Preview ─────────────────────────────────────────────────────────────
 function setupVideoPreview(objectUrl) {
   var card = document.getElementById('videoPreviewCard');
   card.style.display = '';
@@ -582,7 +640,6 @@ function setupVideoPreview(objectUrl) {
 function jumpToSegment(idx) {
   if (!state.segments.length) return;
   idx = Math.max(0, Math.min(idx, state.segments.length - 1));
-
   if (state.previewActive) {
     clearTimeout(state.previewJumpTimer);
     db.cut(idx, function () { scheduleNextJump(idx); });
@@ -598,9 +655,7 @@ function jumpToSegment(idx) {
 function scheduleNextJump(idx) {
   clearTimeout(state.previewJumpTimer);
   if (!state.previewActive) return;
-
   var endTime = state.segments[idx][1];
-
   function checkEnd() {
     if (!state.previewActive) return;
     if (db.currentTime() >= endTime - 0.05) {
@@ -616,7 +671,6 @@ function scheduleNextJump(idx) {
     }
     state.previewJumpTimer = setTimeout(checkEnd, 40);
   }
-
   state.previewJumpTimer = setTimeout(checkEnd, 40);
 }
 
@@ -624,11 +678,9 @@ function startPreview() {
   if (!state.segments.length) return;
   state.previewActive = true;
   updatePreviewUI();
-
   var idx = state.currentSegIdx;
   db.seek(state.segments[idx][0]);
   db.preseek(idx + 1);
-
   db.play().then(function () {
     scheduleNextJump(idx);
   }).catch(function (e) {
@@ -642,13 +694,6 @@ function pausePreview() {
   state.previewActive = false;
   clearTimeout(state.previewJumpTimer);
   db.pause();
-  updatePreviewUI();
-}
-
-function stopVideoPreview() {
-  state.previewActive = false;
-  clearTimeout(state.previewJumpTimer);
-  db.stop();
   updatePreviewUI();
 }
 
@@ -732,7 +777,7 @@ document.getElementById('proToggle').addEventListener('click', function () {
   if (expanded) panel.setAttribute('hidden', ''); else panel.removeAttribute('hidden');
 });
 
-// ── Slice ──────────────────────────────────────────────────────────────────────
+// ── Slice ─────────────────────────────────────────────────────────────────────
 document.getElementById('actionArea').addEventListener('click', function (e) {
   if (e.target.closest('#sliceBtn')) doSlice();
 });
@@ -845,10 +890,9 @@ function exportEDL() {
     recStart += dur;
   });
   downloadText(lines.join('\n'), name + '_cuts.edl', 'text/plain');
-  pushLog('EDL exported — DaVinci Resolve / Avid compatible (25fps)', 'success');
+  pushLog('EDL exported — DaVinci Resolve / Avid (25fps)', 'success');
 }
 
-// ── Export: FCPXML ────────────────────────────────────────────────────────────
 function exportFCPXML() {
   if (!state.segments.length) return;
   var fps = 25, name = state.filename || 'ChaoticSlice';
@@ -876,10 +920,9 @@ function exportFCPXML() {
     '          <spine>\n' + clips +
     '          </spine>\n        </sequence>\n      </project>\n    </event>\n  </library>\n</fcpxml>\n';
   downloadText(xml, name + '_cuts.fcpxml', 'application/xml');
-  pushLog('FCPXML exported — Final Cut Pro / DaVinci Resolve XML', 'success');
+  pushLog('FCPXML exported — Final Cut Pro / DaVinci XML', 'success');
 }
 
-// ── Export: Premiere Pro XML ──────────────────────────────────────────────────
 function exportPremierePro() {
   if (!state.segments.length) return;
   var fps = 25, name = state.filename || 'ChaoticSlice';
@@ -926,7 +969,7 @@ function downloadText(content, filename, mimeType) {
   setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
 }
 
-// ── Wire up controls ──────────────────────────────────────────────────────────
+// ── Wire controls ─────────────────────────────────────────────────────────────
 (function wireControls() {
   function wire(id, fn) { var el = document.getElementById(id); if (el) el.addEventListener('click', fn); }
   wire('pvPlayBtn',    function () { if (state.segments.length) startPreview(); });

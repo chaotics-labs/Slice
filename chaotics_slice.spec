@@ -66,6 +66,7 @@ hidden_imports += collect_submodules('waitress')
 # ── Data files ────────────────────────────────────────────────────────────────
 datas = [
     ('static', 'static'),   # HTML / CSS / JS / assets
+    ('silero_vad, 'silero_vad),
 ]
 datas += collect_data_files('torch')
 datas += collect_data_files('torchaudio')
