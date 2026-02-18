@@ -18,6 +18,8 @@ var state = {
   previewJumpTimer: null,
 };
 
+var jobs_done = {};  // jobId → true when download is available
+
 var MODE_PRESETS = {
   chill:  { threshold: 0.4, min_speech: 400 },
   normal: { threshold: 0.5, min_speech: 250 },
@@ -204,6 +206,23 @@ function updateTimelineMeta(stats){
   pc.style.background='rgba('+accentRgb()+',.12)'; pc.style.color='var('+accentCssVar()+')';
   sc.textContent=stats.segments+' segs'; sc.style.display='';
   document.getElementById('tlDurLabel').textContent=fmtTime(stats.original_duration);
+  updateInfoPanel(stats);
+}
+function updateInfoPanel(stats){
+  var accent='var('+accentCssVar()+')';
+  var orig=document.getElementById('pvInfoOriginal');
+  var kept=document.getElementById('pvInfoKept');
+  var remv=document.getElementById('pvInfoRemoved');
+  var segs=document.getElementById('pvInfoSegs');
+  var pct =document.getElementById('pvInfoPct');
+  if(!orig) return;
+  orig.textContent = fmtTime(stats.original_duration);
+  kept.textContent = fmtTime(stats.kept);
+  remv.textContent = '-'+fmtTime(stats.removed);
+  segs.textContent = stats.segments;
+  pct.textContent  = '-'+stats.pct_removed+'%';
+  // Apply current accent color to accented values
+  [kept,pct].forEach(function(el){ el.style.color=accent; });
 }
 
 // ── Timeline hover ────────────────────────────────────────────────────────────
@@ -382,6 +401,7 @@ function onFileReady(data) {
 function resetState() {
   state.fileId=null; state.jobId=null; state.duration=0; state.segments=[]; state.filename='';
   _browsing=false;
+  jobs_done={};
   db.stop();
   fileChip.classList.remove('show');
   dropZone.style.display='';
@@ -585,6 +605,20 @@ function showExportCard(){
 // ── Mode selector ─────────────────────────────────────────────────────────────
 document.getElementById('modeSelector').addEventListener('click',function(e){
   var btn=e.target.closest('.seg-btn'); if(!btn) return;
+  if(btn.classList.contains('active')) return; // already selected, no-op
+
+  // If a processed video is ready, confirm before discarding it
+  if(state.jobId && jobs_done[state.jobId]) {
+    var ok = confirm('Switching presets will discard the current processed video. Continue?');
+    if(!ok) return;
+    // Reset action area back to slice button
+    jobs_done[state.jobId] = false;
+    document.getElementById('statsCard').style.display='none';
+    setProgress(0);
+    document.getElementById('logBox').innerHTML='<span class="log-placeholder">Ready.</span>';
+    renderActions('idle');
+  }
+
   document.querySelectorAll('.seg-btn').forEach(function(b){b.classList.remove('active');});
   btn.classList.add('active');
   state.mode=btn.dataset.mode;
@@ -595,6 +629,13 @@ document.getElementById('modeSelector').addEventListener('click',function(e){
   document.getElementById('modeHint').textContent=MODE_HINTS[state.mode];
   setAccentVars(accentCssVar());
   buildTracks(state.segments,state.duration);
+  if(state.segments.length) updateInfoPanel({
+    original_duration: state.duration,
+    kept: state.segments.reduce(function(a,s){return a+(s[1]-s[0]);},0),
+    removed: state.duration - state.segments.reduce(function(a,s){return a+(s[1]-s[0]);},0),
+    pct_removed: Math.round((state.duration - state.segments.reduce(function(a,s){return a+(s[1]-s[0]);},0))/state.duration*1000)/10,
+    segments: state.segments.length
+  });
   fetchPreview();
 });
 
@@ -649,6 +690,7 @@ async function doSlice(){
 }
 function onJobDone(stats){
   setProgress(100);
+  jobs_done[state.jobId] = true;
   if(stats){
     showTimeline(stats.segments_list,stats.original_duration);
     updateTimelineMeta(stats);

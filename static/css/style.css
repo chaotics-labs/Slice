@@ -1266,3 +1266,92 @@ body {
   color: var(--label-3);
   margin-top: 4px;
 }
+
+/* ── Video Preview Info Panel ─────────────────────────────────────────────────
+   Paste this block at the end of style.css
+   ─────────────────────────────────────────────────────────────────────────── */
+
+.pv-body {
+  display: flex;
+  gap: 16px;
+  align-items: stretch;
+  padding: 16px 24px 20px;
+}
+
+.pv-video-wrap {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  background: #000;
+  border-radius: var(--r-md);
+  overflow: hidden;
+  aspect-ratio: 16/9;
+  max-height: 280px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-md);
+  border: .5px solid var(--sep-strong);
+}
+
+.pv-info-panel {
+  width: 120px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--fill-4);
+  border: .5px solid var(--sep-strong);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+
+.pv-info-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 12px;
+  text-align: center;
+  gap: 3px;
+}
+
+.pv-info-item-big {
+  flex: 1.4;
+  background: var(--fill-3);
+}
+
+.pv-info-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .5px;
+  text-transform: uppercase;
+  color: var(--label-3);
+}
+
+.pv-info-val {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -.3px;
+  font-variant-numeric: tabular-nums;
+  color: var(--label);
+  line-height: 1;
+}
+
+.pv-info-bigval {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -.5px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.pv-info-accent {
+  color: var(--accent);
+}
+
+.pv-info-divider {
+  height: .5px;
+  background: var(--sep-strong);
+  flex-shrink: 0;
+}
