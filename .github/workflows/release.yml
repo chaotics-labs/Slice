@@ -56,12 +56,10 @@ jobs:
           python-version: '3.11'
 
       - name: Install FFmpeg
-        run: winget install --id Gyan.FFmpeg --silent --accept-source-agreements --accept-package-agreements
-        continue-on-error: true
-
-      - name: Install FFmpeg (fallback via Chocolatey)
-        if: failure()
-        run: choco install ffmpeg -y
+        run: |
+          choco install ffmpeg -y
+          echo "C:\ProgramData\chocolatey\bin" >> $env:GITHUB_PATH
+        shell: pwsh
 
       - name: Install Python deps
         run: |
