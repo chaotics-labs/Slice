@@ -41,6 +41,26 @@ def get_duration(path: str) -> float:
     return float(json.loads(result.stdout)["format"]["duration"])
 
 
+def get_fps(path: str) -> float:
+    """Return video frame rate via ffprobe (from first video stream)."""
+    cmd = [FFPROBE, "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=r_frame_rate", "-of", "json", path]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"ffprobe failed: {result.stderr}")
+    try:
+        streams = json.loads(result.stdout).get("streams", [])
+        if not streams:
+            return 25.0  # Default fallback
+        r_frame_rate = streams[0].get("r_frame_rate", "25/1")
+        # Parse frame rate like "24000/1001" or "30/1"
+        if "/" in r_frame_rate:
+            num, den = r_frame_rate.split("/")
+            return float(num) / float(den)
+        return float(r_frame_rate)
+    except (ValueError, TypeError, KeyError):
+        return 25.0  # Default fallback
+
+
 def extract_audio(video_path: str, audio_path: str) -> None:
     """Extract mono 16 kHz WAV from a video file."""
     cmd = [

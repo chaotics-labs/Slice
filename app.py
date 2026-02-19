@@ -16,7 +16,7 @@ from threading import Timer
 from flask import Flask, Response, after_this_request, jsonify, render_template, request, send_file
 
 from config import ALLOWED_EXTENSIONS, BUNDLE_DIR, DATA_DIR, MAX_UPLOAD_SIZE, TEMP_FOLDER
-from ffmpeg import extract_audio, get_duration
+from ffmpeg import extract_audio, get_duration, get_fps
 from jobs import (
     compute_stats,
     file_sessions,
@@ -115,7 +115,8 @@ def api_register():
     try:
         print(f"[register] getting duration...", flush=True)
         duration = get_duration(str(p))
-        print(f"[register] duration={duration}, extracting audio...", flush=True)
+        fps = get_fps(str(p))
+        print(f"[register] duration={duration}, fps={fps}, extracting audio...", flush=True)
         extract_audio(str(p), audio_path)
         print(f"[register] audio extracted ok", flush=True)
     except Exception as e:
@@ -128,11 +129,13 @@ def api_register():
         "video_path": str(p),
         "audio_path": audio_path,
         "duration":   duration,
+        "fps":        fps,
         "filename":   p.name,
     }
     return jsonify({
         "file_id":  file_id,
         "duration": round(duration, 2),
+        "fps":      round(fps, 2),
         "filename": p.name,
         "size":     p.stat().st_size,
     })
@@ -199,30 +202,50 @@ def api_preview():
     """Run VAD preview (returns segment stats, no video encoding)."""
     body    = request.get_json(force=True)
     file_id = body.get("file_id")
-    print(f"[preview] request file_id={file_id}", flush=True)
+    print(f"[preview] ========== PREVIEW REQUEST START ==========", flush=True)
+    print(f"[preview] request body: {body}", flush=True)
+    print(f"[preview] file_id={file_id}", flush=True)
 
     if not file_id or file_id not in file_sessions:
-        print(f"[preview] unknown file_id", flush=True)
+        print(f"[preview] ERROR: unknown file_id or not in sessions", flush=True)
+        print(f"[preview] known sessions: {list(file_sessions.keys())}", flush=True)
         return jsonify({"error": "Unknown file_id"}), 404
 
-    if not _preview_lock.acquire(blocking=False):
-        print(f"[preview] busy, returning 429", flush=True)
+    print(f"[preview] attempting to acquire lock (non-blocking)...", flush=True)
+    lock_acquired = _preview_lock.acquire(blocking=False)
+    print(f"[preview] lock acquisition result: {lock_acquired}", flush=True)
+    
+    if not lock_acquired:
+        print(f"[preview] ERROR: lock already held (busy), returning 429", flush=True)
         return jsonify({"error": "busy"}), 429
 
     sess = file_sessions[file_id]
-    print(f"[preview] audio_path={sess['audio_path']}", flush=True)
+    print(f"[preview] session data: {sess}", flush=True)
+    
+    # Check if audio file exists
+    audio_file = Path(sess["audio_path"])
+    if not audio_file.exists():
+        print(f"[preview] ERROR: audio file missing at {audio_file}", flush=True)
+        _preview_lock.release()
+        return jsonify({"error": "Audio file not found"}), 500
+    print(f"[preview] audio file found: {audio_file.stat().st_size} bytes", flush=True)
+    
     try:
         p      = parse_params(body)
+        print(f"[preview] parsed params: {p}", flush=True)
         vad_kw = {k: v for k, v in p.items() if k != "label"}
         print(f"[preview] running VAD with params: {vad_kw}", flush=True)
         segments = detect_speech(sess["audio_path"], **vad_kw)
-        print(f"[preview] VAD complete — {len(segments)} segments", flush=True)
+        print(f"[preview] VAD complete — {len(segments)} segments found", flush=True)
         stats = compute_stats(segments, sess["duration"])
+        print(f"[preview] stats computed: {stats}", flush=True)
+        print(f"[preview] ========== PREVIEW SUCCESS ==========", flush=True)
         return jsonify({"ok": True, "stats": stats})
     except Exception as e:
         import traceback
         print(f"[preview] ERROR: {e}", flush=True)
         traceback.print_exc()
+        print(f"[preview] ========== PREVIEW FAILED ==========", flush=True)
         return jsonify({"error": str(e)}), 500
     finally:
         _preview_lock.release()

@@ -131,9 +131,12 @@ async function registerPath(filePath) {
       dropZone.style.display = ''; fileChip.classList.remove('show');
       return;
     }
+    console.log('[register] calling onFileReady with data:', JSON.stringify(data).slice(0, 100));
     onFileReady(data);
+    console.log('[register] onFileReady returned successfully');
   } catch (e) {
     console.error('[register] fetch failed:', e.name, e.message, e);
+    console.error('[register] full error stack:', e.stack);
     pushLog('Error: ' + e.message, 'error');
     setChipError();
     dropZone.style.display = ''; fileChip.classList.remove('show');
@@ -157,21 +160,55 @@ function restoreDropZone() {
 }
 
 function onFileReady(data) {
-  console.log('[file] ready, file_id=' + data.file_id + ' duration=' + data.duration);
-  state.fileId   = data.file_id;
-  state.duration = data.duration;
-  document.getElementById('chipSize').textContent = fmtBytes(data.size);
-  setChipReady();
-  setupVideoPreview('/api/video/' + data.file_id);
-  pushLog('Ready — ' + fmtTime(data.duration) + ' · ' + fmtBytes(data.size), 'success');
-  var sliceBtn = document.getElementById('sliceBtn'); if (sliceBtn) sliceBtn.disabled = true;
-  applyAccent();
-  fetchPreview();
+  try {
+    console.log('[file] ready, file_id=' + data.file_id + ' duration=' + data.duration + ' fps=' + data.fps);
+    console.log('[file] data object:', JSON.stringify(data));
+    state.fileId   = data.file_id;
+    state.duration = data.duration;
+    state.fps      = data.fps || 25;
+    console.log('[file] state updated: fileId=' + state.fileId + ', duration=' + state.duration + ', fps=' + state.fps);
+    
+    var chipSize = document.getElementById('chipSize');
+    if (!chipSize) {
+      console.error('[file] ERROR: chipSize element not found!');
+      throw new Error('UI element chipSize not found');
+    }
+    chipSize.textContent = fmtBytes(data.size);
+    console.log('[file] chip size updated');
+    
+    setChipReady();
+    console.log('[file] chip marked ready');
+    
+    setupVideoPreview('/api/video/' + data.file_id);
+    console.log('[file] video preview setup complete');
+    
+    pushLog('Ready — ' + fmtTime(data.duration) + ' · ' + fmtBytes(data.size), 'success');
+    console.log('[file] ready log pushed');
+    
+    var sliceBtn = document.getElementById('sliceBtn');
+    if (sliceBtn) {
+      sliceBtn.disabled = true;
+      console.log('[file] slice button disabled');
+    } else {
+      console.warn('[file] WARNING: slice button not found');
+    }
+    
+    applyAccent();
+    console.log('[file] accent applied');
+    
+    console.log('[file] state.fileId before fetchPreview:', state.fileId);
+    console.log('[file] calling fetchPreview...');
+    fetchPreview();
+    console.log('[file] fetchPreview returned');
+  } catch (err) {
+    console.error('[file] EXCEPTION in onFileReady:', err.message, err);
+    pushLog('Error: ' + err.message, 'error');
+  }
 }
 
 function resetState() {
   console.log('[reset] clearing state');
-  state.fileId = null; state.jobId = null; state.duration = 0;
+  state.fileId = null; state.jobId = null; state.duration = 0; state.fps = 25;
   state.segments = []; state.filename = '';
   _browsing = false;
 

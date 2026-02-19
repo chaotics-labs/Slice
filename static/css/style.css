@@ -652,7 +652,7 @@ body {
   background: var(--bg-el);
   border: .5px solid var(--sep-strong);
   box-shadow: var(--shadow-lg);
-  padding: 5px 10px;
+  padding: 6px 10px;
   border-radius: var(--r-sm);
   font-size: 12px;
   font-weight: 500;
@@ -663,8 +663,12 @@ body {
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
 }
-.tl-tooltip.show { display: block; }
-.tl-tt-dot { display: inline-block; width: 6px; height: 6px; border-radius: 3px; margin-right: 5px; vertical-align: middle; }
+.tl-tooltip.show { display: flex; align-items: center; gap: 8px; }
+.tl-tt-dot { display: inline-block; width: 6px; height: 6px; border-radius: 3px; flex-shrink: 0; vertical-align: middle; }
+.tl-tt-content { display: flex; flex-direction: column; gap: 2px; white-space: normal; }
+.tl-tt-time { font-weight: 600; color: var(--label); }
+.tl-tt-timecode { font-size: 11px; color: var(--label); font-family: 'Monaco', 'Courier New', monospace; letter-spacing: 0.5px; }
+.tl-tt-duration { font-size: 11px; color: var(--label-2); }
 
 /* ── Stats Row ────────────────────────────────── */
 .stats-row {

@@ -44,10 +44,24 @@ function buildTracks(segs, dur) {
     clip.style.background = 'var(--accent)';
     clip.style.cursor = 'pointer'; clip.style.pointerEvents = 'auto';
     clip.dataset.segIdx = idx;
+    clip.dataset.segStart = s;
+    clip.dataset.segEnd = e;
     clip.addEventListener('click', function (ev) {
       ev.stopPropagation();
       jumpToSegment(idx);
       if (!state.previewActive) startPreview();
+    });
+    clip.addEventListener('mouseenter', function (ev) {
+      ev.stopPropagation();
+      showSegmentTooltip(ev, s, e);
+    });
+    clip.addEventListener('mousemove', function (ev) {
+      ev.stopPropagation();
+      showSegmentTooltip(ev, s, e);
+    });
+    clip.addEventListener('mouseleave', function (ev) {
+      ev.stopPropagation();
+      hideSegmentTooltip();
     });
     var lh = document.createElement('div'); lh.className = 'tl-clip-handle left';
     var rh = document.createElement('div'); rh.className = 'tl-clip-handle right';
@@ -152,6 +166,35 @@ function updateInfoPanel(stats) {
     el.addEventListener('mouseleave', onLeave);
   });
 })();
+
+// ── Segment tooltip (for clips) ────────────────────────────────────────────────
+function showSegmentTooltip(e, startTime, endTime) {
+  var tooltip = document.getElementById('tlTooltip');
+  var duration = endTime - startTime;
+  var color = 'var(--accent)';
+  var fps = state.fps || 25;
+  
+  tooltip.innerHTML =
+    '<span class="tl-tt-dot" style="background:' + color + '"></span>' +
+    '<span class="tl-tt-content">' +
+    '<div class="tl-tt-time">' + fmtTime(startTime) + ' → ' + fmtTime(endTime) + ' (' + fmtTime(duration) + ')</div>' +
+    '<div class="tl-tt-timecode">' + toTimecode(startTime, fps) + ' → ' + toTimecode(endTime, fps) + '</div>' +
+    '</span>';
+  
+  tooltip.classList.add('show');
+  tooltip.style.pointerEvents = 'none';
+  
+  var tx = e.clientX - tooltip.offsetWidth / 2;
+  var ty = e.clientY - 50;
+  tx = Math.max(8, Math.min(tx, window.innerWidth - tooltip.offsetWidth - 8));
+  tooltip.style.left = tx + 'px';
+  tooltip.style.top = ty + 'px';
+}
+
+function hideSegmentTooltip() {
+  var tooltip = document.getElementById('tlTooltip');
+  tooltip.classList.remove('show');
+}
 
 // ── VAD analyzing indicator ───────────────────────────────────────────────────
 function vadStart() {

@@ -5,6 +5,7 @@ var state = {
   fileId:           null,
   jobId:            null,
   duration:         0,
+  fps:              25,
   segments:         [],
   mode:             'normal',
   filename:         '',
