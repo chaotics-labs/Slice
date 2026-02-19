@@ -6,7 +6,7 @@ REM Usage: double-click or run from a terminal:
 REM   build.bat
 REM
 REM Output:
-REM   dist\ChaoticSlice.exe
+REM   dist\Slice.exe
 REM ─────────────────────────────────────────────────────────────────────────────
 
 setlocal enabledelayedexpansion
@@ -71,15 +71,15 @@ pyinstaller chaotics_slice.spec --noconfirm
 
 REM ── 7. Result ─────────────────────────────────────────────────────────────────
 echo.
-if exist dist\ChaoticSlice.exe (
+if exist dist\Slice.exe (
     echo  ╔══════════════════════════════════════╗
     echo  ║  ✅  Build complete!                 ║
     echo  ╚══════════════════════════════════════╝
     echo.
-    echo   Output : dist\ChaoticSlice.exe
-    echo   Run it : dist\ChaoticSlice.exe
+    echo   Output : dist\Slice.exe
+    echo   Run it : dist\Slice.exe
 ) else (
-    echo  ❌  Build failed — dist\ChaoticSlice.exe not found
+    echo  ❌  Build failed — dist\Slice.exe not found
     pause & exit /b 1
 )
 

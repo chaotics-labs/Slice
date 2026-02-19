@@ -7,8 +7,8 @@
 #   ./build.sh
 #
 # Output:
-#   dist/ChaoticSlice          (Linux single binary)
-#   dist/ChaoticSlice.app      (macOS app bundle)
+#   dist/Slice          (Linux single binary)
+#   dist/Slice.app      (macOS app bundle)
 # ─────────────────────────────────────────────────────────────────────────────
 
 set -euo pipefail
@@ -76,9 +76,9 @@ pyinstaller chaotics_slice.spec --noconfirm
 # ── 7. Result ─────────────────────────────────────────────────────────────────
 echo ""
 if [ "$PLATFORM" = "Darwin" ]; then
-  ARTIFACT="$DIST/ChaoticSlice.app"
+  ARTIFACT="$DIST/Slice.app"
 else
-  ARTIFACT="$DIST/ChaoticSlice"
+  ARTIFACT="$DIST/Slice"
 fi
 
 if [ -e "$ARTIFACT" ]; then
@@ -92,7 +92,7 @@ if [ -e "$ARTIFACT" ]; then
   echo ""
   if [ "$PLATFORM" = "Darwin" ]; then
     echo "  Run it : open $ARTIFACT"
-    echo "  Or     : $DIST/ChaoticSlice.app/Contents/MacOS/ChaoticSlice"
+    echo "  Or     : $DIST/Slice.app/Contents/MacOS/Slice"
   else
     echo "  Run it : ./$ARTIFACT"
   fi

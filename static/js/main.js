@@ -24,6 +24,15 @@ document.getElementById('modeSelector').addEventListener('click', function (e) {
   var btn = e.target.closest('.seg-btn');
   if (!btn || btn.classList.contains('active')) return;
 
+  // If download is showing, confirm before discarding
+  var area = document.getElementById('actionArea');
+  if (area.querySelector('.btn-download')) {
+    if (!confirm('Switching modes will discard the current processed video. Continue?')) return;
+    renderActions('idle');
+    document.getElementById('statsCard').style.display = 'none';
+    setProgress(0);
+  }
+
   document.querySelectorAll('.seg-btn').forEach(function (b) { b.classList.remove('active'); });
   btn.classList.add('active');
   state.mode = btn.dataset.mode;
@@ -71,14 +80,22 @@ async function openNativeFilePicker(hintName) {
   if (!hintName) setDropZoneLoading(null);
 
   try {
+    console.log('[browse] opening file picker');
     var res  = await fetch('/api/browse');
     var data = await res.json();
+    console.log('[browse] result:', JSON.stringify(data));
 
     if (data.cancelled || !data.path) { restoreDropZone(); return; }
-    if (data.error) { pushLog('Browse error: ' + data.error, 'error'); restoreDropZone(); return; }
+    if (data.error) {
+      console.error('[browse] error:', data.error);
+      pushLog('Browse error: ' + data.error, 'error');
+      restoreDropZone();
+      return;
+    }
 
     await registerPath(data.path);
   } catch (e) {
+    console.error('[browse] fetch failed:', e.name, e.message, e);
     pushLog('Error: ' + e.message, 'error');
     restoreDropZone();
   }
@@ -96,6 +113,7 @@ async function registerPath(filePath) {
   document.getElementById('logBox').innerHTML = '';
   setChipLoading();
   pushLog('Loading ' + filename + '…');
+  console.log('[register] path:', filePath);
 
   try {
     var res  = await fetch('/api/register', {
@@ -104,8 +122,10 @@ async function registerPath(filePath) {
       body: JSON.stringify({ path: filePath }),
     });
     var data = await res.json();
+    console.log('[register] response', res.status, JSON.stringify(data).slice(0, 200));
 
     if (!res.ok) {
+      console.error('[register] failed:', data.error);
       pushLog('Error: ' + (data.error || 'Registration failed'), 'error');
       setChipError();
       dropZone.style.display = ''; fileChip.classList.remove('show');
@@ -113,6 +133,7 @@ async function registerPath(filePath) {
     }
     onFileReady(data);
   } catch (e) {
+    console.error('[register] fetch failed:', e.name, e.message, e);
     pushLog('Error: ' + e.message, 'error');
     setChipError();
     dropZone.style.display = ''; fileChip.classList.remove('show');
@@ -136,6 +157,7 @@ function restoreDropZone() {
 }
 
 function onFileReady(data) {
+  console.log('[file] ready, file_id=' + data.file_id + ' duration=' + data.duration);
   state.fileId   = data.file_id;
   state.duration = data.duration;
   document.getElementById('chipSize').textContent = fmtBytes(data.size);
@@ -148,6 +170,7 @@ function onFileReady(data) {
 }
 
 function resetState() {
+  console.log('[reset] clearing state');
   state.fileId = null; state.jobId = null; state.duration = 0;
   state.segments = []; state.filename = '';
   _browsing = false;
@@ -182,43 +205,57 @@ document.getElementById('actionArea').addEventListener('click', function (e) {
 
 async function doSlice() {
   if (!state.fileId) return;
+  console.log('[slice] starting job, file_id=' + state.fileId + ' mode=' + state.mode);
   document.getElementById('sliceBtn').disabled = true;
   document.getElementById('statsCard').style.display = 'none';
   document.getElementById('logBox').innerHTML = '';
   setProgress(0); pushLog('Starting job…');
 
   try {
+    var payload = {
+      file_id:    state.fileId,
+      mode:       state.mode,
+      threshold:  parseFloat(document.getElementById('thrSlider').value),
+      min_speech: parseInt(document.getElementById('speechSlider').value),
+    };
+    console.log('[slice] payload:', JSON.stringify(payload));
+
     var res = await fetch('/api/process', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        file_id:    state.fileId,
-        mode:       state.mode,
-        threshold:  parseFloat(document.getElementById('thrSlider').value),
-        min_speech: parseInt(document.getElementById('speechSlider').value),
-      }),
+      body: JSON.stringify(payload),
     });
     var data = await res.json();
-    if (!res.ok) throw new Error(data.error);
+    console.log('[slice] process response:', res.status, JSON.stringify(data));
+
+    if (!res.ok) throw new Error(data.error || 'Process failed');
 
     state.jobId = data.job_id;
+    console.log('[slice] job_id=' + state.jobId);
     var _totalSegs = 0;
 
     // SSE log stream
     var sse = new EventSource('/api/logs/' + state.jobId);
+    sse.onerror = function (e) {
+      console.error('[slice] SSE error:', e);
+    };
     sse.onmessage = function (e) {
-      var item = JSON.parse(e.data);
-      if (item.done) { sse.close(); return; }
-      pushLog(item.msg, item.level);
+      try {
+        var item = JSON.parse(e.data);
+        if (item.done) { sse.close(); return; }
+        pushLog(item.msg, item.level);
 
-      var mTotal = item.msg.match(/Encoding (\d+) segments/);
-      if (mTotal) { _totalSegs = parseInt(mTotal[1]); setProgress(1); }
+        var mTotal = item.msg.match(/Encoding (\d+) segments/);
+        if (mTotal) { _totalSegs = parseInt(mTotal[1]); setProgress(1); }
 
-      var mDone = item.msg.match(/Encoded (\d+)\/(\d+) segments/);
-      if (mDone) {
-        var done  = parseInt(mDone[1]);
-        var total = parseInt(mDone[2]) || _totalSegs || 1;
-        setProgress(Math.round(done / total * 100));
+        var mDone = item.msg.match(/Encoded (\d+)\/(\d+) segments/);
+        if (mDone) {
+          var done  = parseInt(mDone[1]);
+          var total = parseInt(mDone[2]) || _totalSegs || 1;
+          setProgress(Math.round(done / total * 100));
+        }
+      } catch (parseErr) {
+        console.error('[slice] SSE parse error:', parseErr, 'raw:', e.data);
       }
     };
 
@@ -228,22 +265,31 @@ async function doSlice() {
         var sr = await fetch('/api/status/' + state.jobId);
         if (sr.status === 404) { clearInterval(poll); return; }
         var sd = await sr.json();
-        if (sd.status === 'done') { clearInterval(poll); onJobDone(sd.stats); }
-        else if (sd.status === 'error') {
+        console.log('[slice] poll status:', sd.status);
+
+        if (sd.status === 'done') {
           clearInterval(poll);
-          pushLog(sd.error || 'Error', 'error');
+          onJobDone(sd.stats);
+        } else if (sd.status === 'error') {
+          clearInterval(poll);
+          console.error('[slice] job error:', sd.error);
+          pushLog(sd.error || 'Unknown job error', 'error');
           document.getElementById('sliceBtn').disabled = false;
         }
-      } catch (_) {}
+      } catch (pollErr) {
+        console.error('[slice] poll fetch error:', pollErr.message);
+      }
     }, 600);
 
   } catch (e) {
+    console.error('[slice] doSlice error:', e.name, e.message, e);
     pushLog('Error: ' + e.message, 'error');
     document.getElementById('sliceBtn').disabled = false;
   }
 }
 
 function onJobDone(stats) {
+  console.log('[slice] job done, stats:', JSON.stringify(stats).slice(0, 200));
   setProgress(100);
 
   if (stats) {
@@ -261,7 +307,6 @@ function onJobDone(stats) {
     showExportCard();
   }
 
-  // Show download link, re-enable Slice for another run
   var area = document.getElementById('actionArea');
   area.innerHTML =
     '<a href="/api/download/' + state.jobId + '" class="btn-primary btn-download">' +
@@ -283,10 +328,10 @@ function renderActions(phase) {
 // ── Wire remaining controls ───────────────────────────────────────────────────
 (function () {
   function wire(id, fn) { var el = document.getElementById(id); if (el) el.addEventListener('click', fn); }
-  wire('pvPlayBtn',   function () { if (state.segments.length) startPreview(); });
-  wire('pvPauseBtn',  pausePreview);
-  wire('pvPrevBtn',   function () { jumpToSegment(state.currentSegIdx - 1); });
-  wire('pvNextBtn',   function () { jumpToSegment(state.currentSegIdx + 1); });
+  wire('pvPlayBtn',    function () { if (state.segments.length) startPreview(); });
+  wire('pvPauseBtn',   pausePreview);
+  wire('pvPrevBtn',    function () { jumpToSegment(state.currentSegIdx - 1); });
+  wire('pvNextBtn',    function () { jumpToSegment(state.currentSegIdx + 1); });
   wire('exportEdlBtn', exportEDL);
   wire('exportFcpBtn', exportFCPXML);
   wire('exportPpBtn',  exportPremierePro);

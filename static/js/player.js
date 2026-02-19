@@ -35,13 +35,18 @@ var db = (function () {
       });
       _els[i].addEventListener('ended', function () {
         if (i !== _active) return;
+        console.log('[player] video ended on buffer', i);
         state.previewActive = false;
         updatePreviewUI();
+      });
+      _els[i].addEventListener('error', function () {
+        console.error('[player] video error on buffer', i, _els[i].error);
       });
     });
   }
 
   function load(src) {
+    console.log('[player] loading src:', src);
     _ready = [false, false]; _active = 0;
     [0, 1].forEach(function (i) { _els[i].src = src; _els[i].load(); });
     _els[0].style.opacity = '1'; _els[1].style.opacity = '0';
@@ -77,6 +82,7 @@ var db = (function () {
         if (cb) cb();
         preseek(idx + 1);
       }).catch(function (e) {
+        console.error('[player] play() failed after cut:', e.name, e.message);
         pushLog('Preview error: ' + e.message, 'error');
         state.previewActive = false;
         updatePreviewUI();
@@ -94,11 +100,16 @@ var db = (function () {
       }
       _els[i].addEventListener('seeked', onSeeked);
       if (_els[i].readyState >= 1) { _els[i].currentTime = target; }
-      else { _els[i].addEventListener('loadedmetadata', function onM() { _els[i].removeEventListener('loadedmetadata', onM); _els[i].currentTime = target; }); }
+      else {
+        _els[i].addEventListener('loadedmetadata', function onM() {
+          _els[i].removeEventListener('loadedmetadata', onM);
+          _els[i].currentTime = target;
+        });
+      }
 
-      // Fallback: seek active element directly if idle buffer is slow
       setTimeout(function () {
         if (done) return; done = true;
+        console.warn('[player] cut fallback triggered for idx', idx);
         _els[i].removeEventListener('seeked', onSeeked);
         _els[_active].currentTime = target;
         state.currentSegIdx = idx;
@@ -113,6 +124,7 @@ var db = (function () {
   function currentTime() { return _els[_active].currentTime; }
 
   function stop() {
+    console.log('[player] stop()');
     [0, 1].forEach(function (i) {
       if (_els[i]) { _els[i].pause(); _els[i].removeAttribute('src'); _els[i].load(); }
     });
@@ -124,8 +136,9 @@ var db = (function () {
 })();
 
 
-// ── Preview player UI ─────────────────────────────────────────────────────────
+// ── Preview player UI ────────────────────────────────────────────────────────
 function setupVideoPreview(url) {
+  console.log('[player] setupVideoPreview:', url);
   document.getElementById('videoPreviewCard').style.display = '';
   state.currentSegIdx = 0; state.previewActive = false;
   db.load(url);
@@ -135,6 +148,7 @@ function setupVideoPreview(url) {
 function jumpToSegment(idx) {
   if (!state.segments.length) return;
   idx = Math.max(0, Math.min(idx, state.segments.length - 1));
+  console.log('[player] jumpToSegment:', idx);
   if (state.previewActive) {
     clearTimeout(state.previewJumpTimer);
     db.cut(idx, function () { scheduleNextJump(idx); });
@@ -158,6 +172,7 @@ function scheduleNextJump(idx) {
       if (next < state.segments.length) {
         db.cut(next, function () { scheduleNextJump(next); });
       } else {
+        console.log('[player] preview complete, all segments played');
         state.previewActive = false;
         updatePreviewUI(); highlightActiveClip(-1);
       }
@@ -170,16 +185,21 @@ function scheduleNextJump(idx) {
 
 function startPreview() {
   if (!state.segments.length) return;
+  console.log('[player] startPreview, idx:', state.currentSegIdx);
   state.previewActive = true; updatePreviewUI();
   var idx = state.currentSegIdx;
   db.seek(state.segments[idx][0]); db.preseek(idx + 1);
-  db.play().then(function () { scheduleNextJump(idx); }).catch(function (e) {
+  db.play().then(function () {
+    scheduleNextJump(idx);
+  }).catch(function (e) {
+    console.error('[player] play() failed:', e.name, e.message);
     pushLog('Preview error: ' + e.message, 'error');
     state.previewActive = false; updatePreviewUI();
   });
 }
 
 function pausePreview() {
+  console.log('[player] pausePreview');
   state.previewActive = false;
   clearTimeout(state.previewJumpTimer);
   db.pause(); updatePreviewUI();

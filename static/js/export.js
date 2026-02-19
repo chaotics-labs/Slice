@@ -3,7 +3,7 @@
 
 function exportEDL() {
   if (!state.segments.length) return;
-  var fps  = 25, name = state.filename || 'ChaoticSlice';
+  var fps  = 25, name = state.filename || 'Slice';
   var lines = ['TITLE: ' + name + '_cuts', 'FCM: NON-DROP FRAME', ''];
   var recStart = 0;
 
@@ -24,7 +24,7 @@ function exportEDL() {
 
 function exportFCPXML() {
   if (!state.segments.length) return;
-  var fps = 25, name = state.filename || 'ChaoticSlice';
+  var fps = 25, name = state.filename || 'Slice';
   var totalDur = state.segments.reduce(function (a, s) { return a + (s[1] - s[0]); }, 0);
   function rat(s) { return Math.round(s * fps) + '/' + fps + 's'; }
 
@@ -57,7 +57,7 @@ function exportFCPXML() {
 
 function exportPremierePro() {
   if (!state.segments.length) return;
-  var fps = 25, name = state.filename || 'ChaoticSlice';
+  var fps = 25, name = state.filename || 'Slice';
   function fr(s) { return Math.round(s * fps); }
 
   var items = '', aItems = '', trackStart = 0;

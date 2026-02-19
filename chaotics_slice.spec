@@ -6,9 +6,9 @@
 #   pyinstaller chaotics_slice.spec
 #
 # Output:
-#   dist/ChaoticSlice          (macOS / Linux binary)
-#   dist/ChaoticSlice.exe      (Windows)
-#   dist/ChaoticSlice.app      (macOS app bundle — one-dir mode)
+#   dist/Slice          (macOS / Linux binary)
+#   dist/Slice.exe      (Windows)
+#   dist/Slice.app      (macOS app bundle — one-dir mode)
 # ─────────────────────────────────────────────────────────────────────────────
 
 import sys
@@ -103,7 +103,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='ChaoticSlice',
+    name='Slice',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -122,7 +122,7 @@ exe = EXE(
 if sys.platform == 'darwin':
     app = BUNDLE(
         exe,
-        name='ChaoticSlice.app',
+        name='Slice.app',
         icon=None,       # add 'static/res/icon.icns' if you have one
         bundle_identifier='org.chaotics.slice',
         info_plist={

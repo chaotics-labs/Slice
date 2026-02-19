@@ -70,6 +70,7 @@ def api_browse():
     except subprocess.TimeoutExpired:
         return jsonify({"cancelled": True})
     except Exception as e:
+        print(f"[browse] error: {e}", flush=True)
         return jsonify({"error": str(e)}), 500
 
 
@@ -78,6 +79,7 @@ def api_register():
     """Register a local file by path — zero-copy, no upload."""
     body      = request.get_json(force=True)
     file_path = body.get("path", "").strip().strip('"').strip("'")
+    print(f"[register] path={file_path}", flush=True)
 
     if not file_path:
         return jsonify({"error": "No path provided"}), 400
@@ -90,11 +92,18 @@ def api_register():
 
     file_id    = str(uuid.uuid4())[:8]
     audio_path = str(DATA_DIR / "temp" / f"{file_id}.wav")
+    print(f"[register] file_id={file_id} audio_path={audio_path}", flush=True)
 
     try:
+        print(f"[register] getting duration...", flush=True)
         duration = get_duration(str(p))
+        print(f"[register] duration={duration}, extracting audio...", flush=True)
         extract_audio(str(p), audio_path)
+        print(f"[register] audio extracted ok", flush=True)
     except Exception as e:
+        import traceback
+        print(f"[register] ERROR: {e}", flush=True)
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
     file_sessions[file_id] = {
@@ -172,23 +181,34 @@ def api_preview():
     """Run VAD preview (returns segment stats, no video encoding)."""
     body    = request.get_json(force=True)
     file_id = body.get("file_id")
+    print(f"[preview] request file_id={file_id}", flush=True)
+
     if not file_id or file_id not in file_sessions:
+        print(f"[preview] unknown file_id", flush=True)
         return jsonify({"error": "Unknown file_id"}), 404
 
     if not _preview_lock.acquire(blocking=False):
+        print(f"[preview] busy, returning 429", flush=True)
         return jsonify({"error": "busy"}), 429
 
     sess = file_sessions[file_id]
+    print(f"[preview] audio_path={sess['audio_path']}", flush=True)
     try:
-        p        = parse_params(body)
-        vad_kw   = {k: v for k, v in p.items() if k != "label"}
+        p      = parse_params(body)
+        vad_kw = {k: v for k, v in p.items() if k != "label"}
+        print(f"[preview] running VAD with params: {vad_kw}", flush=True)
         segments = detect_speech(sess["audio_path"], **vad_kw)
-        stats    = compute_stats(segments, sess["duration"])
+        print(f"[preview] VAD complete — {len(segments)} segments", flush=True)
+        stats = compute_stats(segments, sess["duration"])
         return jsonify({"ok": True, "stats": stats})
     except Exception as e:
+        import traceback
+        print(f"[preview] ERROR: {e}", flush=True)
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
     finally:
         _preview_lock.release()
+        print(f"[preview] lock released", flush=True)
 
 
 @app.route("/api/process", methods=["POST"])
@@ -196,11 +216,14 @@ def api_process():
     """Start a full encode job in a background thread."""
     body    = request.get_json(force=True)
     file_id = body.get("file_id")
+    print(f"[process] request file_id={file_id}", flush=True)
+
     if not file_id or file_id not in file_sessions:
         return jsonify({"error": "Unknown file_id"}), 404
 
     params = parse_params(body)
     job_id = str(uuid.uuid4())[:8]
+    print(f"[process] created job_id={job_id} params={params}", flush=True)
     jobs[job_id]     = {"status": "queued", "progress": 0, "label": params["label"], "file_id": file_id}
     job_logs[job_id] = queue.Queue()
 
@@ -254,6 +277,7 @@ def api_download(job_id: str):
     sess      = file_sessions.get(job.get("file_id", ""), {})
     orig_stem = Path(sess.get("filename", "sliced.mp4")).stem
     label     = job.get("label", "sliced")
+    print(f"[download] job_id={job_id} file={output_path}", flush=True)
 
     @after_this_request
     def cleanup(response):
