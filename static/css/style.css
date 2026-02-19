@@ -514,6 +514,7 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  position: relative;
 }
 
 .tl-header {
@@ -961,14 +962,18 @@ body {
 /* ── VAD analyzing state ──────────────────────── */
 .tl-vad-state {
   display: none;
-  flex: 1;
+  position: absolute;
+  inset: 0;
+  z-index: 10;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 14px;
   padding: 40px;
   opacity: 0;
-  transition: opacity .25s var(--ease);
+  transition: opacity .3s var(--ease);
+  background: var(--bg-el);
+  pointer-events: none;
 }
 .tl-vad-state.active  { display: flex; }
 .tl-vad-state.visible { opacity: 1; }

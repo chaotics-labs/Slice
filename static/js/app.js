@@ -570,22 +570,19 @@ function highlightActiveClip(idx){
 // ── Preview (VAD) ─────────────────────────────────────────────────────────────
 // ── VAD indicator ─────────────────────────────────────────────────────────────
 function vadStart() {
-  var empty = document.getElementById('tlEmpty');
-  var vad   = document.getElementById('tlVadState');
-  var body  = document.getElementById('tlBody');
+  var vad  = document.getElementById('tlVadState');
   if (!vad) return;
-  if (empty) empty.style.display = 'none';
-  if (body)  body.style.display  = 'none';
   vad.classList.add('active');
   requestAnimationFrame(function() {
     requestAnimationFrame(function() { vad.classList.add('visible'); });
   });
 }
+
 function vadStop() {
   var vad = document.getElementById('tlVadState');
   if (!vad) return;
   vad.classList.remove('visible');
-  setTimeout(function() { vad.classList.remove('active'); }, 260);
+  setTimeout(function() { vad.classList.remove('active'); }, 300);
 }
 
 function fetchPreview(){
@@ -607,13 +604,15 @@ function fetchPreview(){
       });
       if(res.status===429){vadStop();return;}
       var data=await res.json();
-      if(data.ok&&data.stats){
-        showTimeline(data.stats.segments_list,data.stats.original_duration);
+
+      if (data.ok && data.stats) {
+        showTimeline(data.stats.segments_list, data.stats.original_duration);  // render first
         updateTimelineMeta(data.stats);
         showExportCard();
-        var sb=document.getElementById('sliceBtn');
-        if(sb){sb.disabled=false;sb.style.opacity='';sb.style.cursor='';applyAccent();}
+        var sb = document.getElementById('sliceBtn');
+        if (sb) { sb.disabled = false; sb.style.opacity = ''; sb.style.cursor = ''; applyAccent(); }
       }
+      
     } catch(_){
       var sb=document.getElementById('sliceBtn');
       if(sb){sb.disabled=false;sb.style.opacity='';sb.style.cursor='';}
