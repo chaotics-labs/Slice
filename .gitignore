@@ -3,3 +3,4 @@ uploads/*
 videos/*
 temp/*
 *.exe
+__pycache__/
