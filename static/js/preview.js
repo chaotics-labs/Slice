@@ -4,9 +4,11 @@
 function fetchPreview() {
   console.log('[preview] ======== fetchPreview CALLED ========');
   console.log('[preview] state.fileId=' + state.fileId);
+  console.log('[preview] entire state object:', JSON.stringify(state));
   if (!state.fileId) {
     console.error('[preview] ERROR: no fileId in state, cannot fetch preview');
-    pushLog('No file selected', 'error');
+    console.error('[preview] state object:', state);
+    pushLog('No file selected — try uploading a video first', 'error');
     return;
   }
   

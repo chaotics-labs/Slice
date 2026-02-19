@@ -110,7 +110,7 @@ def _encode_segment(job_id: str, i: int, s: float, e: float, video_path: str, n_
         "-ss", f"{s:.6f}",
         "-i", video_path,
         "-t:a", f"{dur:.6f}",
-        "-t:v", f"{dur + 0.05:.6f}",
+        "-t:v", f"{dur:.6f}",
         "-c:v", "libx264", "-preset", "ultrafast", "-crf", "18",
         "-profile:v", "high", "-level", "4.1",
         "-pix_fmt", "yuv420p",

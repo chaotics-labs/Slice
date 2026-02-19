@@ -20,7 +20,7 @@ var db = (function () {
       var el = _els[i];
       el.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;object-fit:contain;background:transparent;';
       el.preload = 'auto';
-      el.style.transition = 'opacity 0.05s linear';
+      el.style.transition = 'opacity 0.02s linear';  // 20ms = frame-fast at 25fps (1/25 = 40ms)
     });
 
     _els[0].style.opacity = '1';
@@ -69,6 +69,7 @@ var db = (function () {
   function cut(idx, cb) {
     if (!state.segments[idx]) return;
     var i = _idle(), target = state.segments[idx][0];
+    console.log('[player] CUT to seg ' + idx + '@' + target.toFixed(3) + 's (buffer=' + i + ', old buffer=' + _active + ')');
 
     function doSwap() {
       _els[_active].style.opacity = '0';
@@ -157,6 +158,8 @@ function jumpToSegment(idx) {
     db.seek(state.segments[idx][0]);
     updateSegCounter(); highlightActiveClip(idx);
     db.preseek(idx + 1);
+    updatePlaybackTime();   // Update info panel when jumping while paused
+    updatePlayheadBar();    // Update playhead position
   }
 }
 
@@ -164,23 +167,52 @@ function scheduleNextJump(idx) {
   clearTimeout(state.previewJumpTimer);
   if (!state.previewActive) return;
   var endTime = state.segments[idx][1];
+  var fps = state.fps || 25;
+  var frameDuration = 1 / fps;
+  var tolerance = frameDuration * 0.5;
 
   function checkEnd() {
     if (!state.previewActive) return;
-    if (db.currentTime() >= endTime - 0.05) {
-      var next = idx + 1;
-      if (next < state.segments.length) {
-        db.cut(next, function () { scheduleNextJump(next); });
+    var currentTime = db.currentTime();
+    var timeToEnd = endTime - currentTime;
+    
+    // When segment ends
+    if (timeToEnd <= tolerance) {
+      console.log('[player] seg ' + idx + ' ended: currentTime=' + currentTime.toFixed(4) + 's');
+      
+      // Check if autoplay is enabled
+      if (state.autoplay && idx + 1 < state.segments.length) {
+        console.log('[player] autoplay enabled, jumping to next segment');
+        db.cut(idx + 1, function () { scheduleNextJump(idx + 1); });
       } else {
-        console.log('[player] preview complete, all segments played');
+        console.log('[player] autoplay disabled or no more segments, pausing');
+        db.pause();
         state.previewActive = false;
-        updatePreviewUI(); highlightActiveClip(-1);
+        updatePreviewUI();
       }
       return;
     }
-    state.previewJumpTimer = setTimeout(checkEnd, 40);
+    
+    // Update time display every 16ms (~60fps)
+    updatePlaybackTime();
+    
+    // Dynamic polling: use 10ms interval in final 200ms, otherwise 40ms
+    var nextInterval = timeToEnd < 0.2 ? 10 : 40;
+    state.previewJumpTimer = setTimeout(checkEnd, nextInterval);
   }
   state.previewJumpTimer = setTimeout(checkEnd, 40);
+}
+
+function updatePlaybackTime() {
+  var timeEl = document.getElementById('pvInfoTime');
+  var tcEl = document.getElementById('pvInfoTimecode');
+  if (!timeEl || !tcEl) return;
+  
+  var t = db.currentTime();
+  var fps = state.fps || 25;
+  
+  timeEl.textContent = t.toFixed(2) + 's';
+  tcEl.textContent = toTimecode(t, fps);
 }
 
 function startPreview() {
@@ -202,16 +234,97 @@ function pausePreview() {
   console.log('[player] pausePreview');
   state.previewActive = false;
   clearTimeout(state.previewJumpTimer);
-  db.pause(); updatePreviewUI();
+  db.pause();
+  updatePlaybackTime();  // Update display to show where we paused
+  updatePlayheadBar();   // Update playhead position
+  updatePreviewUI();
+}
+
+function updatePlayheadBar() {
+  var ph = document.getElementById('pvPlayheadBar');
+  if (!ph || !state.duration) return;
+  var currentTime = db.currentTime();
+  ph.style.left = (currentTime / state.duration * 100) + '%';
 }
 
 function updatePreviewUI() {
-  var pb  = document.getElementById('pvPlayBtn');
-  var pau = document.getElementById('pvPauseBtn');
-  if (!pb) return;
-  pb.style.display  = state.previewActive ? 'none' : '';
-  pau.style.display = state.previewActive ? '' : 'none';
+  var toggleBtn = document.getElementById('pvToggleBtn');
+  if (!toggleBtn) return;
+  
+  var playIcon = toggleBtn.querySelector('.pv-icon-play');
+  var pauseIcon = toggleBtn.querySelector('.pv-icon-pause');
+  
+  if (state.previewActive) {
+    // Currently playing, show pause icon
+    if (playIcon) playIcon.style.display = 'none';
+    if (pauseIcon) pauseIcon.style.display = '';
+  } else {
+    // Currently paused, show play icon
+    if (playIcon) playIcon.style.display = '';
+    if (pauseIcon) pauseIcon.style.display = 'none';
+  }
+  
   updateSegCounter();
+  lucide.createIcons();  // Re-render icons after visibility changes
+}
+
+function togglePreview() {
+  if (state.previewActive) {
+    pausePreview();
+  } else {
+    resumePreview();
+  }
+}
+
+function resumePreview() {
+  if (!state.segments.length) return;
+  console.log('[player] resumePreview from paused state, idx:', state.currentSegIdx);
+  state.previewActive = true;
+  updatePreviewUI();
+  db.play().then(function () {
+    scheduleNextJump(state.currentSegIdx);
+  }).catch(function (e) {
+    console.error('[player] play() failed:', e.name, e.message);
+    pushLog('Preview error: ' + e.message, 'error');
+    state.previewActive = false;
+    updatePreviewUI();
+  });
+}
+
+function replaySegment() {
+  if (!state.segments.length) return;
+  var idx = state.currentSegIdx;
+  console.log('[player] replaySegment:', idx);
+  db.seek(state.segments[idx][0]);
+  updatePlaybackTime();
+}
+
+function toggleAutoplay() {
+  state.autoplay = !state.autoplay;
+  console.log('[player] autoplay toggled:', state.autoplay);
+  updateAutoplayButton();
+}
+
+function updateAutoplayButton() {
+  var btn = document.getElementById('pvAutoplayBtn');
+  if (!btn) return;
+  var offIcon = btn.querySelector('.pv-icon-autoplay-off');
+  var onIcon = btn.querySelector('.pv-icon-autoplay-on');
+  if (state.autoplay) {
+    if (offIcon) offIcon.style.display = 'none';
+    if (onIcon) onIcon.style.display = '';
+    btn.style.opacity = '1';
+  } else {
+    if (offIcon) offIcon.style.display = '';
+    if (onIcon) onIcon.style.display = 'none';
+    btn.style.opacity = '0.6';
+  }
+  lucide.createIcons();  // Re-render icons after visibility changes
+}
+
+function resetPlaybackTime() {
+  // Removed: don't reset time display when preview stops
+  // This keeps the position visible for inspection
 }
 
 function updateSegCounter() {

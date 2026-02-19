@@ -212,25 +212,22 @@
           <span class="pv-hint">Click any green clip on the timeline or use controls below</span>
         </div>
         <div class="pv-controls">
+          <button class="pv-btn" id="pvReplayBtn" title="Replay segment">
+            <i data-lucide="rotate-ccw" width="13" height="13"></i>
+          </button>
           <button class="pv-btn" id="pvPrevBtn" title="Previous segment">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-              <polygon points="19 20 9 12 19 4 19 20"/><line x1="5" y1="19" x2="5" y2="5"/>
-            </svg>
+            <i data-lucide="skip-back" width="13" height="13"></i>
           </button>
-          <button class="pv-btn pv-btn-main" id="pvPlayBtn" title="Play preview — jumps across cuts automatically">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-              <polygon points="5 3 19 12 5 21 5 3"/>
-            </svg>
-          </button>
-          <button class="pv-btn pv-btn-main" id="pvPauseBtn" title="Pause" style="display:none">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
-              <rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>
-            </svg>
+          <button class="pv-btn pv-btn-main" id="pvToggleBtn" title="Play/Pause">
+            <i data-lucide="play" width="14" height="14" class="pv-icon-play"></i>
+            <i data-lucide="pause" width="13" height="13" style="display:none" class="pv-icon-pause"></i>
           </button>
           <button class="pv-btn" id="pvNextBtn" title="Next segment">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-              <polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/>
-            </svg>
+            <i data-lucide="skip-forward" width="13" height="13"></i>
+          </button>
+          <button class="pv-btn" id="pvAutoplayBtn" title="Toggle autoplay — auto-play next segment after current ends">
+            <i data-lucide="circle-dashed" width="13" height="13" class="pv-icon-autoplay-off"></i>
+            <i data-lucide="circle-arrow-right" width="13" height="13" style="display:none" class="pv-icon-autoplay-on"></i>
           </button>
           <span class="pv-seg-counter" id="pvSegCounter">No cuts yet</span>
         </div>
@@ -273,6 +270,12 @@
           <div class="pv-info-item">
             <span class="pv-info-label">Segments</span>
             <span class="pv-info-val" id="pvInfoSegs">—</span>
+          </div>
+          <div class="pv-info-divider"></div>
+          <div class="pv-info-item">
+            <span class="pv-info-label">Playback</span>
+            <span class="pv-info-val pv-info-mono" id="pvInfoTime">0.00s</span>
+            <span class="pv-info-val pv-info-mono" id="pvInfoTimecode">00:00:00:00</span>
           </div>
         </div>
       </div>

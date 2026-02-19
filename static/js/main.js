@@ -215,8 +215,10 @@ function onFileReady(data) {
 
 function resetState() {
   console.log('[reset] clearing state');
+  console.log('[reset] previous fileId was:', state.fileId);
   state.fileId = null; state.jobId = null; state.duration = 0; state.fps = 25;
   state.segments = []; state.filename = '';
+  console.log('[reset] state now cleared: fileId=' + state.fileId);
   _browsing = false;
 
   db.stop();
@@ -373,11 +375,15 @@ function renderActions(phase) {
 // ── Wire remaining controls ───────────────────────────────────────────────────
 (function () {
   function wire(id, fn) { var el = document.getElementById(id); if (el) el.addEventListener('click', fn); }
-  wire('pvPlayBtn',    function () { if (state.segments.length) startPreview(); });
-  wire('pvPauseBtn',   pausePreview);
+  wire('pvToggleBtn',  togglePreview);
+  wire('pvReplayBtn',  replaySegment);
+  wire('pvAutoplayBtn', toggleAutoplay);
   wire('pvPrevBtn',    function () { jumpToSegment(state.currentSegIdx - 1); });
   wire('pvNextBtn',    function () { jumpToSegment(state.currentSegIdx + 1); });
   wire('exportEdlBtn', exportEDL);
   wire('exportFcpBtn', exportFCPXML);
   wire('exportPpBtn',  exportPremierePro);
+  
+  // Initialize Lucide icons
+  lucide.createIcons();
 })();

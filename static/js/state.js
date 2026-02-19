@@ -13,6 +13,7 @@ var state = {
   previewActive:    false,
   previewTimer:     null,
   previewJumpTimer: null,
+  autoplay:         false,
 };
 
 var MODE_PRESETS = {

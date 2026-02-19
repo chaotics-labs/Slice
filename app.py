@@ -132,6 +132,7 @@ def api_register():
         "fps":        fps,
         "filename":   p.name,
     }
+    print(f"[register] ✓ registered file_id={file_id} ({p.name}) — total files in session: {len(file_sessions)}", flush=True)
     return jsonify({
         "file_id":  file_id,
         "duration": round(duration, 2),
@@ -205,10 +206,17 @@ def api_preview():
     print(f"[preview] ========== PREVIEW REQUEST START ==========", flush=True)
     print(f"[preview] request body: {body}", flush=True)
     print(f"[preview] file_id={file_id}", flush=True)
+    print(f"[preview] registered file_ids: {list(file_sessions.keys())} (count={len(file_sessions)})", flush=True)
 
     if not file_id or file_id not in file_sessions:
         print(f"[preview] ERROR: unknown file_id or not in sessions", flush=True)
-        print(f"[preview] known sessions: {list(file_sessions.keys())}", flush=True)
+        print(f"[preview] CRITICAL: file_id='{file_id}' not found in file_sessions", flush=True)
+        print(f"[preview] available file_ids: {list(file_sessions.keys())}", flush=True)
+        if file_sessions:
+            for fid in file_sessions:
+                print(f"[preview]   - {fid}: {file_sessions[fid].get('filename')}", flush=True)
+        else:
+            print(f"[preview] file_sessions is EMPTY - no files registered!", flush=True)
         return jsonify({"error": "Unknown file_id"}), 404
 
     print(f"[preview] attempting to acquire lock (non-blocking)...", flush=True)
