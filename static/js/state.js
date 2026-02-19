@@ -2,19 +2,17 @@
 'use strict';
 
 var state = {
-  fileId:          null,
-  jobId:           null,
-  duration:        0,
-  segments:        [],
-  mode:            'normal',
-  filename:        '',
-  currentSegIdx:   0,
-  previewActive:   false,
-  previewTimer:    null,
+  fileId:           null,
+  jobId:            null,
+  duration:         0,
+  segments:         [],
+  mode:             'normal',
+  filename:         '',
+  currentSegIdx:    0,
+  previewActive:    false,
+  previewTimer:     null,
   previewJumpTimer: null,
 };
-
-var jobs_done = {};   // jobId → true once download is available
 
 var MODE_PRESETS = {
   chill:  { threshold: 0.4, min_speech: 400 },

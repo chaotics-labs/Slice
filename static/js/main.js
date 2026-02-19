@@ -24,15 +24,6 @@ document.getElementById('modeSelector').addEventListener('click', function (e) {
   var btn = e.target.closest('.seg-btn');
   if (!btn || btn.classList.contains('active')) return;
 
-  if (state.jobId && jobs_done[state.jobId]) {
-    if (!confirm('Switching presets will discard the current processed video. Continue?')) return;
-    jobs_done[state.jobId] = false;
-    document.getElementById('statsCard').style.display = 'none';
-    setProgress(0);
-    document.getElementById('logBox').innerHTML = '<span class="log-placeholder">Ready.</span>';
-    renderActions('idle');
-  }
-
   document.querySelectorAll('.seg-btn').forEach(function (b) { b.classList.remove('active'); });
   btn.classList.add('active');
   state.mode = btn.dataset.mode;
@@ -159,7 +150,7 @@ function onFileReady(data) {
 function resetState() {
   state.fileId = null; state.jobId = null; state.duration = 0;
   state.segments = []; state.filename = '';
-  _browsing = false; jobs_done = {};
+  _browsing = false;
 
   db.stop();
   fileChip.classList.remove('show');
@@ -254,7 +245,6 @@ async function doSlice() {
 
 function onJobDone(stats) {
   setProgress(100);
-  jobs_done[state.jobId] = true;
 
   if (stats) {
     showTimeline(stats.segments_list, stats.original_duration);
@@ -270,32 +260,24 @@ function onJobDone(stats) {
     document.getElementById('statsCard').style.display = '';
     showExportCard();
   }
-  renderActions('done');
+
+  // Show download link, re-enable Slice for another run
+  var area = document.getElementById('actionArea');
+  area.innerHTML =
+    '<a href="/api/download/' + state.jobId + '" class="btn-primary btn-download">' +
+      '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>' +
+      'Download' +
+    '</a>';
 }
 
 // ── Action area rendering ─────────────────────────────────────────────────────
 function renderActions(phase) {
   var area = document.getElementById('actionArea');
-  if (phase === 'done') {
-    area.innerHTML =
-      '<a href="/api/download/' + state.jobId + '" class="btn-primary btn-download">' +
-        '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>' +
-        'Download' +
-      '</a>' +
-      '<button class="btn-secondary" id="againBtn">Process Another File</button>';
-    document.getElementById('againBtn').addEventListener('click', function () {
-      document.getElementById('statsCard').style.display = 'none';
-      setProgress(0);
-      document.getElementById('logBox').innerHTML = '<span class="log-placeholder">Ready.</span>';
-      renderActions('idle');
-    });
-  } else {
-    area.innerHTML =
-      '<button class="btn-primary" id="sliceBtn"' + (state.fileId ? '' : ' disabled') + '>' +
-        '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 8.12 15.88M14.47 14.48 20 20M8.12 8.12 12 12"/></svg>' +
-        'Slice' +
-      '</button>';
-  }
+  area.innerHTML =
+    '<button class="btn-primary" id="sliceBtn"' + (state.fileId ? '' : ' disabled') + '>' +
+      '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 8.12 15.88M14.47 14.48 20 20M8.12 8.12 12 12"/></svg>' +
+      'Slice' +
+    '</button>';
 }
 
 // ── Wire remaining controls ───────────────────────────────────────────────────
