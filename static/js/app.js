@@ -53,7 +53,6 @@ function toTimecode(secs,fps) {
   return String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0')+':'+String(ss).padStart(2,'0')+':'+String(fr).padStart(2,'0');
 }
 
-// Mode → accent color values (light and dark share the same hue, CSS tokens handle the shade)
 var MODE_ACCENT_VARS = {
   chill:  { color: 'var(--teal)',   rgb: '50,173,230'  },
   normal: { color: 'var(--blue)',   rgb: '0,122,255'   },
@@ -118,7 +117,6 @@ function setProgress(pct){
   }
 }
 
-// Track mouse on progress pill so the tooltip follows the cursor
 (function(){
   document.addEventListener('mousemove', function(e){
     var pill = document.getElementById('progressPill');
@@ -140,9 +138,19 @@ function initSlider(sid,fid,vid,min,max,fmt){
   sl.addEventListener('input',function(){upd();fetchPreview();});
   return upd;
 }
-var syncThr    = initSlider('thrSlider','thrFill','thrVal',0.1,0.9,function(v){return parseFloat(v).toFixed(2);});
-var syncSpeech = initSlider('speechSlider','speechFill','speechVal',50,800,function(v){return v+' ms';});
-syncThr(); syncSpeech();
+function initSliderNoPreview(sid,fid,vid,min,max,fmt){
+  var sl=document.getElementById(sid),fi=document.getElementById(fid),va=document.getElementById(vid);
+  function upd(){
+    fi.style.width=((parseFloat(sl.value)-min)/(max-min)*100)+'%';
+    va.textContent=fmt(sl.value);
+  }
+  sl.addEventListener('input',upd);
+  return upd;
+}
+var syncThr      = initSlider('thrSlider','thrFill','thrVal',0.1,0.9,function(v){return parseFloat(v).toFixed(2);});
+var syncSpeech   = initSlider('speechSlider','speechFill','speechVal',50,800,function(v){return v+' ms';});
+var syncFramePad = initSliderNoPreview('framePadSlider','framePadFill','framePadVal',1,30,function(v){return v+' fr';});
+syncThr(); syncSpeech(); syncFramePad();
 
 // ── Timeline ──────────────────────────────────────────────────────────────────
 function buildRuler(dur){
@@ -222,7 +230,6 @@ function updateInfoPanel(stats){
   remv.textContent = '-'+fmtTime(stats.removed);
   segs.textContent = stats.segments;
   pct.textContent  = '-'+stats.pct_removed+'%';
-  // Apply current accent color to accented values
   [kept,pct].forEach(function(el){ el.style.color='var(--accent)'; });
 }
 
@@ -251,27 +258,14 @@ function updateInfoPanel(stats){
 })();
 
 // ── File handling ─────────────────────────────────────────────────────────────
-//
-// Click  → GET /api/browse  → server opens native OS file dialog → returns path
-// Drop   → get File object from drag event → create object URL for preview
-//           then POST /api/register with the dropped file's name heuristic
-//
-// For drag-drop the browser doesn't expose the full system path, so we call
-// /api/browse after drop to let the user confirm via the native dialog —
-// but we pre-seed the video preview from the File object immediately.
-// ─────────────────────────────────────────────────────────────────────────────
-
 var dropZone = document.getElementById('dropZone');
 var fileChip = document.getElementById('fileChip');
-var _browsing = false;  // guard against double-clicks
+var _browsing = false;
 
-// Click anywhere on the dropzone → open native file picker on the server
 dropZone.addEventListener('click', function() {
-  if (state.fileId) return;   // already loaded
+  if (state.fileId) return;
   openNativeFilePicker();
 });
-
-// Drag over
 dropZone.addEventListener('dragover', function(e) {
   e.preventDefault();
   dropZone.classList.add('drag');
@@ -279,8 +273,6 @@ dropZone.addEventListener('dragover', function(e) {
 dropZone.addEventListener('dragleave', function() {
   dropZone.classList.remove('drag');
 });
-
-// Drop — register via native dialog (browser can't expose full path)
 dropZone.addEventListener('drop', function(e) {
   e.preventDefault();
   dropZone.classList.remove('drag');
@@ -290,36 +282,17 @@ dropZone.addEventListener('drop', function(e) {
   openNativeFilePicker(file.name);
 });
 
-// Clear button
 document.getElementById('chipClear').addEventListener('click', resetState);
 
 async function openNativeFilePicker(hintName) {
   if (_browsing) return;
   _browsing = true;
-
-  if (!hintName) {
-    // Show a subtle loading state on the dropzone itself
-    setDropZoneLoading(null);
-  }
-
+  if (!hintName) setDropZoneLoading(null);
   try {
     var res  = await fetch('/api/browse');
     var data = await res.json();
-
-    if (data.cancelled || !data.path) {
-      // User hit cancel — restore dropzone
-      restoreDropZone();
-      _browsing = false;
-      return;
-    }
-
-    if (data.error) {
-      pushLog('Browse error: ' + data.error, 'error');
-      restoreDropZone();
-      _browsing = false;
-      return;
-    }
-
+    if (data.cancelled || !data.path) { restoreDropZone(); _browsing = false; return; }
+    if (data.error) { pushLog('Browse error: ' + data.error, 'error'); restoreDropZone(); _browsing = false; return; }
     await registerPath(data.path);
   } catch(e) {
     pushLog('Error: ' + e.message, 'error');
@@ -329,10 +302,8 @@ async function openNativeFilePicker(hintName) {
 }
 
 async function registerPath(filePath) {
-  var filename = filePath.split(/[\\/]/).pop();
+  var filename = filePath.split(/[\\\/]/).pop();
   state.filename = filename.replace(/\.[^.]+$/, '');
-
-  // Switch to chip view
   dropZone.style.display = 'none';
   fileChip.classList.add('show');
   document.getElementById('chipName').textContent = filename;
@@ -340,7 +311,6 @@ async function registerPath(filePath) {
   document.getElementById('logBox').innerHTML = '';
   setChipLoading();
   pushLog('Loading ' + filename + '…');
-
   try {
     var res  = await fetch('/api/register', {
       method: 'POST',
@@ -348,7 +318,6 @@ async function registerPath(filePath) {
       body: JSON.stringify({ path: filePath })
     });
     var data = await res.json();
-
     if (!res.ok) {
       pushLog('Error: ' + (data.error || 'Registration failed'), 'error');
       setChipError();
@@ -356,7 +325,6 @@ async function registerPath(filePath) {
       fileChip.classList.remove('show');
       return;
     }
-
     onFileReady(data);
   } catch(e) {
     pushLog('Error: ' + e.message, 'error');
@@ -389,12 +357,9 @@ function onFileReady(data) {
   state.duration = data.duration;
   document.getElementById('chipSize').textContent = fmtBytes(data.size);
   setChipReady();
-
-  // Always stream from backend — works for both click-browse and drag-drop
   setupVideoPreview('/api/video/' + data.file_id);
-
   pushLog('Ready — ' + fmtTime(data.duration) + ' · ' + fmtBytes(data.size), 'success');
-  document.getElementById('sliceBtn').disabled = true; // enabled after VAD preview
+  document.getElementById('sliceBtn').disabled = true;
   applyAccent();
   fetchPreview();
 }
@@ -403,6 +368,8 @@ function resetState() {
   state.fileId=null; state.jobId=null; state.duration=0; state.segments=[]; state.filename='';
   _browsing=false;
   jobs_done={};
+  clearTimeout(state.previewTimer);
+  _vadInflight = 0;
   db.stop();
   fileChip.classList.remove('show');
   dropZone.style.display='';
@@ -567,24 +534,33 @@ function highlightActiveClip(idx){
   });
 }
 
-// ── Preview (VAD) ─────────────────────────────────────────────────────────────
-// ── VAD indicator ─────────────────────────────────────────────────────────────
+// ── VAD overlay ───────────────────────────────────────────────────────────────
+var _vadInflight = 0;
+
 function vadStart() {
-  var vad  = document.getElementById('tlVadState');
+  _vadInflight++;
+  var vad = document.getElementById('tlVadState');
   if (!vad) return;
-  vad.classList.add('active');
-  requestAnimationFrame(function() {
-    requestAnimationFrame(function() { vad.classList.add('visible'); });
-  });
+  if (_vadInflight === 1) {
+    vad.classList.add('active');
+    requestAnimationFrame(function() {
+      requestAnimationFrame(function() { vad.classList.add('visible'); });
+    });
+  }
 }
 
 function vadStop() {
+  _vadInflight = Math.max(0, _vadInflight - 1);
+  if (_vadInflight > 0) return;
   var vad = document.getElementById('tlVadState');
   if (!vad) return;
   vad.classList.remove('visible');
-  setTimeout(function() { vad.classList.remove('active'); }, 300);
+  setTimeout(function() {
+    if (_vadInflight === 0) vad.classList.remove('active');
+  }, 300);
 }
 
+// ── Preview (VAD) ─────────────────────────────────────────────────────────────
 function fetchPreview(){
   if(!state.fileId) return;
   clearTimeout(state.previewTimer);
@@ -602,17 +578,15 @@ function fetchPreview(){
           min_speech:parseInt(document.getElementById('speechSlider').value)
         })
       });
-      if(res.status===429){vadStop();return;}
+      if(res.status===429){ return; }
       var data=await res.json();
-
-      if (data.ok && data.stats) {
-        showTimeline(data.stats.segments_list, data.stats.original_duration);  // render first
+      if(data.ok && data.stats){
+        showTimeline(data.stats.segments_list, data.stats.original_duration);
         updateTimelineMeta(data.stats);
         showExportCard();
-        var sb = document.getElementById('sliceBtn');
-        if (sb) { sb.disabled = false; sb.style.opacity = ''; sb.style.cursor = ''; applyAccent(); }
+        var sb=document.getElementById('sliceBtn');
+        if(sb){sb.disabled=false;sb.style.opacity='';sb.style.cursor='';applyAccent();}
       }
-      
     } catch(_){
       var sb=document.getElementById('sliceBtn');
       if(sb){sb.disabled=false;sb.style.opacity='';sb.style.cursor='';}
@@ -621,6 +595,7 @@ function fetchPreview(){
     }
   }, 800);
 }
+
 function showExportCard(){
   if(!state.segments.length) return;
   var ec=document.getElementById('exportCard'); if(ec) ec.style.display='';
@@ -629,18 +604,19 @@ function showExportCard(){
 // ── Mode selector ─────────────────────────────────────────────────────────────
 document.getElementById('modeSelector').addEventListener('click',function(e){
   var btn=e.target.closest('.seg-btn'); if(!btn) return;
-  if(btn.classList.contains('active')) return; // already selected, no-op
+  if(btn.classList.contains('active')) return;
 
-  // If a processed video is ready, confirm before discarding it
   if(state.jobId && jobs_done[state.jobId]) {
     var ok = confirm('Switching presets will discard the current processed video. Continue?');
     if(!ok) return;
-    // Reset action area back to slice button
     jobs_done[state.jobId] = false;
     document.getElementById('statsCard').style.display='none';
     setProgress(0);
     document.getElementById('logBox').innerHTML='<span class="log-placeholder">Ready.</span>';
     renderActions('idle');
+    // Explicitly re-enable slice button — fetchPreview will set it properly
+    var sb = document.getElementById('sliceBtn');
+    if(sb){ sb.disabled=false; sb.style.opacity=''; sb.style.cursor=''; }
   }
 
   document.querySelectorAll('.seg-btn').forEach(function(b){b.classList.remove('active');});
@@ -678,7 +654,8 @@ async function doSlice(){
       body:JSON.stringify({
         file_id:state.fileId, mode:state.mode,
         threshold:parseFloat(document.getElementById('thrSlider').value),
-        min_speech:parseInt(document.getElementById('speechSlider').value)
+        min_speech:parseInt(document.getElementById('speechSlider').value),
+        frame_pad:parseInt(document.getElementById('framePadSlider').value)
       })
     });
     var data=await res.json();
@@ -690,12 +667,8 @@ async function doSlice(){
       var item=JSON.parse(e.data);
       if(item.done){sse.close();return;}
       pushLog(item.msg,item.level);
-
-      // "Encoding 59 segments (4 workers)…" — grab total, show bar at 0
       var mTotal=item.msg.match(/Encoding (\d+) segments/);
       if(mTotal){ _totalSegs=parseInt(mTotal[1]); setProgress(1); }
-
-      // "Encoded 10/59 segments" — 0→100% exclusively
       var mDone=item.msg.match(/Encoded (\d+)\/(\d+) segments/);
       if(mDone){
         var done=parseInt(mDone[1]), total=parseInt(mDone[2])||_totalSegs||1;
@@ -739,14 +712,7 @@ function renderActions(phase){
       '<a href="/api/download/'+state.jobId+'" class="btn-primary btn-download">'+
         '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>'+
         'Download'+
-      '</a>'+
-      '<button class="btn-secondary" id="againBtn">Process Another File</button>';
-    document.getElementById('againBtn').addEventListener('click',function(){
-      document.getElementById('statsCard').style.display='none';
-      setProgress(0);
-      document.getElementById('logBox').innerHTML='<span class="log-placeholder">Ready.</span>';
-      renderActions('idle');
-    });
+      '</a>';
   } else {
     area.innerHTML=
       '<button class="btn-primary" id="sliceBtn"'+(state.fileId?'':' disabled')+'>'+

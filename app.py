@@ -221,7 +221,6 @@ def parse_params(data: dict) -> dict:
         min_silence = preset["min_silence"]
         padding     = preset["padding"]
 
-    # Determine output label — "savage", "normal", etc., or custom "V0.50_M250"
     preset_defaults = {
         "chill":  {"threshold": 0.4, "min_speech_ms": 400},
         "normal": {"threshold": 0.5, "min_speech_ms": 250},
@@ -237,6 +236,7 @@ def parse_params(data: dict) -> dict:
 
     return dict(threshold=threshold, min_speech_ms=min_speech,
                 min_silence_ms=min_silence, padding_ms=padding,
+                frame_pad=int(data.get("frame_pad", 5)),
                 label=label)
 
 
@@ -274,13 +274,31 @@ def purge_output(output_path: Path):
         pass
 
 
+def purge_session_audio(file_id: str):
+    """Delete the extracted WAV for a session."""
+    sess = file_sessions.get(file_id, {})
+    audio = Path(sess.get("audio_path", ""))
+    try:
+        if audio.exists():
+            audio.unlink()
+            log(f"cleanup: {audio.name}")
+    except Exception:
+        pass
+
+
+def purge_all_sessions():
+    """Wipe all session WAVs and clear the session table."""
+    for fid in list(file_sessions.keys()):
+        purge_session_audio(fid)
+    file_sessions.clear()
+
+
 # ─── Background render worker ─────────────────────────────────────────────────
 
 def process_job(job_id: str, file_id: str, params: dict):
     try:
         sess       = file_sessions[file_id]
         video_path = sess["video_path"]
-        audio_path = sess["audio_path"]
         duration   = sess["duration"]
 
         log(f"job {job_id}: start  {Path(video_path).name}  {duration:.1f}s")
@@ -291,7 +309,10 @@ def process_job(job_id: str, file_id: str, params: dict):
             f"min-silence={params['min_silence_ms']}ms"
         )
 
-        segments = run_vad_on_audio(audio_path, **{k: v for k, v in params.items() if k != "label"})
+        segments = run_vad_on_audio(
+            sess["audio_path"],
+            **{k: v for k, v in params.items() if k not in ("label", "frame_pad")}
+        )
         if not segments:
             raise RuntimeError("No speech detected. Try lowering threshold or Chill mode.")
 
@@ -301,116 +322,92 @@ def process_job(job_id: str, file_id: str, params: dict):
 
         output_filename = f"{job_id}_sliced.mp4"
         output_path     = OUTPUT_FOLDER / output_filename
-        concat_list     = TEMP_FOLDER / f"{job_id}_concat.txt"
-        tmp_files       = [None] * len(segments)
-        completed_count = [0]
-        count_lock      = threading.Lock()
 
-        # Cap at 4 — parallel x264 processes are memory-hungry (especially 4K).
-        MAX_WORKERS = min(4, max(1, (os.cpu_count() or 4) - 1))
-        log(f"job {job_id}: {len(segments)} segs  workers={MAX_WORKERS}")
-        push_log(job_id, f"Encoding {len(segments)} segments ({MAX_WORKERS} workers)…")
+        # ── Single-pass select filter ─────────────────────────────────────────
+        # Build a select expression that keeps only frames within speech segments.
+        # This avoids all segment/concat boundary issues — one decode, one encode.
+        #
+        # Video:  select + setpts resets timestamps so output is contiguous
+        # Audio:  aselect + asetpts does the same for audio samples
+        # Result: perfectly aligned A/V, zero drift, no temp files needed.
+        #
+        # We extend each segment end by 2 frames (0.067s @ 30fps) to compensate
+        # for the select filter dropping the last frame(s) at each boundary.
+        # ─────────────────────────────────────────────────────────────────────
 
-        def encode_segment(i, s, e):
-            tmp_path = TEMP_FOLDER / f"{job_id}_seg{i:04d}.mp4"
-            dur = e - s
-                
-            cmd = [
-                FFMPEG, "-y",
-                "-ss", f"{s:.6f}",
-                "-i", video_path,
-                "-t:a", f"{dur:.6f}",
-                "-t:v", f"{dur + 0.05:.6f}",
-                "-c:v", "libx264", "-preset", "ultrafast", "-crf", "18",
-                "-profile:v", "high", "-level", "4.1",
-                "-pix_fmt", "yuv420p",
-                "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
-                "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
-                "-avoid_negative_ts", "make_zero",
-                "-movflags", "+faststart",
-                str(tmp_path),
-                "-loglevel", "error",
-            ]
-                
-            t0 = time.time()
-            r  = subprocess.run(cmd, capture_output=True, text=True)
-            if r.returncode != 0:
-                raise RuntimeError(f"Segment {i} failed: {r.stderr[:300]}")
-            # ── Diagnostic: compare encoded duration vs requested ──
-            try:
-                probe = subprocess.run(
-                    [FFPROBE, "-v", "error", "-show_entries",
-                        "stream=codec_type,duration", "-of", "json", str(tmp_path)],
-                    capture_output=True, text=True
-                )
-                pdata = json.loads(probe.stdout)
-                for st in pdata.get("streams", []):
-                    actual = float(st.get("duration", 0))
-                    diff   = actual - dur
-                    log(f"  seg {i+1:03d} [{st['codec_type']}]  "
-                        f"want={dur:.4f}s  got={actual:.4f}s  diff={diff:+.4f}s")
-            except Exception:
-                pass
-            log(f"  seg {i+1:03d}/{len(segments)}  {s:.2f}→{e:.2f}  encoded in {time.time()-t0:.2f}s")
-            return i, tmp_path
+        frame_pad_frames = params.get("frame_pad", 5)
+        FRAME_PAD = frame_pad_frames / 30.0  # frames at 30fps
 
+        select_expr = "+".join(
+            f"between(t,{s:.6f},{min(e + FRAME_PAD, duration):.6f})" for s, e in segments
+        )
+
+        vf = (
+            f"select='{select_expr}',"
+            f"setpts=N/FRAME_RATE/TB,"
+            f"scale=trunc(iw/2)*2:trunc(ih/2)*2"
+        )
+        af = f"aselect='{select_expr}',asetpts=N/SR/TB"
+
+        push_log(job_id, f"Encoding {len(segments)} segments (single pass)…")
+        log(f"job {job_id}: single-pass select filter  {len(segments)} segs")
+
+        cmd = [
+            FFMPEG, "-y",
+            "-i", video_path,
+            "-vf", vf,
+            "-af", af,
+            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "18",
+            "-profile:v", "high", "-level", "4.1",
+            "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
+            "-movflags", "+faststart",
+            str(output_path),
+            "-loglevel", "error",
+        ]
+
+        t0  = time.time()
+        proc = subprocess.Popen(
+            cmd,
+            stderr=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            text=True,
+        )
+
+        # Poll stderr for progress — ffmpeg prints frame= lines to stderr
+        # We estimate progress by watching elapsed time vs expected duration
+        def _progress_watcher():
+            expected = kept  # seconds of output we expect
+            while proc.poll() is None:
+                elapsed = time.time() - t0
+                # rough estimate: ffmpeg processes roughly in real-time for x264 ultrafast
+                pct = min(95, 40 + int((elapsed / max(expected, 1)) * 55))
+                update_job(job_id, progress=pct)
+                time.sleep(1)
+
+        watcher = threading.Thread(target=_progress_watcher, daemon=True)
+        watcher.start()
+
+        _, stderr_out = proc.communicate()
+        watcher.join(timeout=2)
+
+        if proc.returncode != 0:
+            raise RuntimeError(f"FFmpeg failed: {stderr_out[:500]}")
+
+        elapsed = time.time() - t0
+        log(f"job {job_id}: encode done in {elapsed:.1f}s")
+
+        # Diagnostic: verify output duration
         try:
-            with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-                futures = {
-                    executor.submit(encode_segment, i, s, e): i
-                    for i, (s, e) in enumerate(segments)
-                }
-                for future in as_completed(futures):
-                    i, tmp_path = future.result()
-                    tmp_files[i] = tmp_path
-                    with count_lock:
-                        completed_count[0] += 1
-                        done = completed_count[0]
-                    pct = 40 + int(done / len(segments) * 50)
-                    update_job(job_id, progress=pct)
-                    if done % 10 == 0 or done == len(segments):
-                        push_log(job_id, f"Encoded {done}/{len(segments)} segments")
-
-            with open(concat_list, "w", encoding="utf-8") as f:
-                for p in tmp_files:
-                    f.write(f"file '{p.as_posix()}'\n")
-
-            push_log(job_id, "Joining segments…")
-            log(f"job {job_id}: concat → {output_filename}")
-
-            cmd = [
-                FFMPEG, "-y",
-                "-f", "concat", "-safe", "0",
-                "-i", str(concat_list),
-                "-c", "copy",
-                "-movflags", "+faststart",
-                str(output_path),
-                "-loglevel", "error",
-            ]
-            r = subprocess.run(cmd, capture_output=True, text=True)
-            if r.returncode != 0:
-                raise RuntimeError(f"Concat failed: {r.stderr[:300]}")
-            # ── Diagnostic: log final output duration vs expected ──
-            try:
-                probe = subprocess.run(
-                    [FFPROBE, "-v", "error", "-show_entries",
-                     "format=duration", "-of", "json", str(output_path)],
-                    capture_output=True, text=True
-                )
-                actual_total = float(json.loads(probe.stdout)["format"]["duration"])
-                expected_total = sum(e - s for s, e in segments)
-                log(f"concat: expected={expected_total:.4f}s  got={actual_total:.4f}s  diff={actual_total-expected_total:+.4f}s")
-            except Exception:
-                pass
-
-        finally:
-            for p in tmp_files:
-                if p and Path(p).exists():
-                    try: Path(p).unlink()
-                    except: pass
-            if concat_list.exists():
-                try: concat_list.unlink()
-                except: pass
+            probe = subprocess.run(
+                [FFPROBE, "-v", "error", "-show_entries",
+                 "format=duration", "-of", "json", str(output_path)],
+                capture_output=True, text=True
+            )
+            actual = float(json.loads(probe.stdout)["format"]["duration"])
+            log(f"output: expected={kept:.4f}s  got={actual:.4f}s  diff={actual-kept:+.4f}s")
+        except Exception:
+            pass
 
         out_mb = output_path.stat().st_size / 1e6 if output_path.exists() else 0
         log(f"job {job_id}: done  {out_mb:.1f} MB")
@@ -425,6 +422,8 @@ def process_job(job_id: str, file_id: str, params: dict):
         push_log(job_id, f"Error: {e}", "error")
         update_job(job_id, status="error", error=str(e))
     finally:
+        # Delete the extracted WAV — no longer needed
+        purge_session_audio(file_id)
         if job_id in job_logs:
             job_logs[job_id].put(None)
 
@@ -485,6 +484,9 @@ def api_register():
     suffix = p.suffix.lower()
     if suffix not in ALLOWED_EXTENSIONS:
         return jsonify({"error": f"Unsupported format: {suffix}  (supported: {', '.join(ALLOWED_EXTENSIONS)})"}), 400
+
+    # Clean up any existing sessions and orphaned WAV files before starting fresh
+    purge_all_sessions()
 
     file_id    = str(uuid.uuid4())[:8]
     audio_path = str(TEMP_FOLDER / f"{file_id}.wav")
@@ -593,7 +595,7 @@ def api_preview():
     log(f"preview: file_id={file_id}")
     try:
         p        = parse_params(body)
-        segments = run_vad_on_audio(sess["audio_path"], **{k: v for k, v in p.items() if k != "label"})
+        segments = run_vad_on_audio(sess["audio_path"], **{k: v for k, v in p.items() if k not in ("label", "frame_pad")})
         stats    = compute_stats(segments, sess["duration"])
         return jsonify({"ok": True, "stats": stats})
     except Exception as e:
@@ -655,9 +657,8 @@ def api_download(job_id: str):
     if not output_path.exists():
         return jsonify({"error": "File missing"}), 404
 
-    # Build: originalname_savage.mp4  or  originalname_V0.50_M250.mp4
     sess      = file_sessions.get(job.get("file_id", ""), {})
-    orig_name = Path(sess.get("filename", "sliced.mp4")).stem   # no extension
+    orig_name = Path(sess.get("filename", "sliced.mp4")).stem
     label     = job.get("label", "sliced")
     download_name = f"{orig_name}_{label}.mp4"
 

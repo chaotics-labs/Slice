@@ -6,6 +6,68 @@
   <title>Chaotics Slice  v1.2</title>
   <link rel="stylesheet" href="/static/css/style.css" />
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+
+  <style>
+    /* ── Info bubble ─────────────────────────────────────────────── */
+    .info-bubble {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--fill-2);
+      border: .5px solid var(--sep-strong);
+      color: var(--label-3);
+      font-size: 9px;
+      font-weight: 700;
+      cursor: default;
+      position: relative;
+      flex-shrink: 0;
+      line-height: 1;
+      user-select: none;
+      transition: background .15s, color .15s;
+    }
+    .info-bubble:hover { background: var(--fill-1); color: var(--label-2); }
+
+    .info-bubble .info-tip {
+      display: none;
+      position: absolute;
+      bottom: calc(100% + 6px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--bg-el);
+      border: .5px solid var(--sep-strong);
+      box-shadow: var(--shadow-lg);
+      border-radius: var(--r-sm);
+      padding: 7px 10px;
+      width: 210px;
+      font-size: 11px;
+      font-weight: 400;
+      line-height: 1.55;
+      color: var(--label-2);
+      white-space: normal;
+      pointer-events: none;
+      z-index: 500;
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+    }
+    .info-bubble:hover .info-tip { display: block; }
+
+    .info-tip::after {
+      content: '';
+      position: absolute;
+      top: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      border: 5px solid transparent;
+      border-top-color: var(--sep-strong);
+    }
+
+    /* disclosure-btn flex tweak so bubble sits right */
+    .disclosure-btn { gap: 6px; }
+    .disclosure-btn .card-label { flex: 1; }
+  </style>
 </head>
 <body>
 
@@ -17,7 +79,6 @@
     </a>
     <div style="display: flex; align-items: center;">
       <img src="/static/res/Chaotics Slice Logo White.png" alt="Slice" class="brand-logo" />
-      <!-- <b>Slice</b> -->
     </div>
   
     <span class="brand-badge">v1.2</span>
@@ -52,7 +113,7 @@
     <section class="card">
       <h2 class="card-label">Source</h2>
 
-      <!-- Drop zone — click opens native file dialog via backend -->
+      <!-- Drop zone -->
       <div id="dropZone" class="dropzone">
         <div class="dropzone-content">
           <div class="dz-icon-wrap">
@@ -66,7 +127,7 @@
         </div>
       </div>
 
-      <!-- File pill shown once a file is loaded -->
+      <!-- File pill -->
       <div class="file-pill" id="fileChip">
         <div class="pill-icon" id="chipIcon">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -101,11 +162,25 @@
     <section class="card">
       <button class="disclosure-btn" id="proToggle" aria-expanded="true">
         <span class="card-label" style="margin:0">Advanced</span>
+
+        <!-- ── Info bubble ── -->
+        <span class="info-bubble" tabindex="0" aria-label="Advanced settings info">
+          i
+          <span class="info-tip">
+            <strong>VAD Threshold</strong> — how confident the model must be that audio is speech before keeping it. Lower = keeps more, higher = cuts more aggressively.<br><br>
+            <strong>Minimum Speech</strong> — shortest utterance (ms) that counts as speech. Raise to ignore filler sounds.<br><br>
+            <strong>Frame Pad</strong> — extra frames added to the end of each kept segment before encoding, preventing hard cut-offs on the last syllable.
+          </span>
+        </span>
+
         <svg class="disclosure-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="6 9 12 15 18 9"/>
         </svg>
       </button>
+
       <div class="pro-panel" id="proPanel">
+
+        <!-- VAD Threshold -->
         <div class="slider-group">
           <div class="slider-header">
             <span class="slider-label">VAD Threshold</span>
@@ -117,6 +192,8 @@
           </div>
           <div class="slider-hints"><span>Sensitive</span><span>Selective</span></div>
         </div>
+
+        <!-- Minimum Speech -->
         <div class="slider-group">
           <div class="slider-header">
             <span class="slider-label">Minimum Speech</span>
@@ -128,6 +205,20 @@
           </div>
           <div class="slider-hints"><span>Short</span><span>Long</span></div>
         </div>
+
+        <!-- Frame Pad -->
+        <div class="slider-group">
+          <div class="slider-header">
+            <span class="slider-label">Frame Pad</span>
+            <span class="slider-val" id="framePadVal">5 fr</span>
+          </div>
+          <div class="slider-track-wrap">
+            <div class="slider-fill-track"><div class="slider-fill" id="framePadFill"></div></div>
+            <input type="range" class="apple-range" id="framePadSlider" min="1" max="30" step="1" value="5">
+          </div>
+          <div class="slider-hints"><span>Tight</span><span>Generous</span></div>
+        </div>
+
       </div>
     </section>
 
