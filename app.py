@@ -15,7 +15,7 @@ from threading import Timer
 
 from flask import Flask, Response, after_this_request, jsonify, render_template, request, send_file
 
-from config import ALLOWED_EXTENSIONS, BUNDLE_DIR, DATA_DIR, MAX_UPLOAD_SIZE
+from config import ALLOWED_EXTENSIONS, BUNDLE_DIR, DATA_DIR, MAX_UPLOAD_SIZE, TEMP_FOLDER
 from ffmpeg import extract_audio, get_duration
 from jobs import (
     compute_stats,
@@ -38,6 +38,24 @@ app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_SIZE
 
 # One lock to serialise preview requests (VAD is memory-heavy)
 _preview_lock = threading.Lock()
+
+
+# ── Startup cleanup ───────────────────────────────────────────────────────────
+def _cleanup_temp_folder():
+    """Clear all files in temp folder on app launch."""
+    try:
+        if TEMP_FOLDER.exists():
+            for item in TEMP_FOLDER.iterdir():
+                if item.is_file():
+                    try:
+                        item.unlink()
+                    except OSError:
+                        pass
+            print(f"[startup] cleaned temp folder", flush=True)
+    except Exception as e:
+        print(f"[startup] temp cleanup error: {e}", flush=True)
+
+_cleanup_temp_folder()
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -282,6 +300,8 @@ def api_download(job_id: str):
     @after_this_request
     def cleanup(response):
         purge_output(output_path)
+        # Clean up session data from memory
+        file_sessions.pop(job.get("file_id", ""), None)
         jobs.pop(job_id, None)
         job_logs.pop(job_id, None)
         return response

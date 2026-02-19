@@ -98,6 +98,7 @@ def purge_output(output_path: Path):
         pass
 
 
+
 # ── Segment encoder ───────────────────────────────────────────────────────────
 def _encode_segment(job_id: str, i: int, s: float, e: float, video_path: str, n_total: int) -> tuple[int, Path]:
     """Encode a single clip segment; returns (index, output_path)."""
