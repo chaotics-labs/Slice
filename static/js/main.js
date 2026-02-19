@@ -176,6 +176,13 @@ function onFileReady(data) {
     chipSize.textContent = fmtBytes(data.size);
     console.log('[file] chip size updated');
     
+    // Display FPS in timeline header
+    var fpsLabel = document.getElementById('tlFpsLabel');
+    if (fpsLabel) {
+      fpsLabel.textContent = state.fps.toFixed(2) + ' fps';
+      console.log('[file] fps label updated to ' + state.fps + ' fps');
+    }
+    
     setChipReady();
     console.log('[file] chip marked ready');
     
@@ -225,6 +232,7 @@ function resetState() {
   document.getElementById('tlChipPct').style.display  = 'none';
   document.getElementById('tlChipSegs').style.display = 'none';
   document.getElementById('tlDurLabel').textContent   = '';
+  document.getElementById('tlFpsLabel').textContent   = '';
   document.getElementById('statsCard').style.display  = 'none';
   document.getElementById('logBox').innerHTML = '<span class="log-placeholder">Waiting for input…</span>';
 

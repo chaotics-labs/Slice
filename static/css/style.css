@@ -538,6 +538,7 @@ body {
 }
 .tl-chip-segs { background: var(--fill-3); color: var(--label-3); }
 .tl-meta-dur  { font-size: 11px; font-weight: 500; color: var(--label-3); font-variant-numeric: tabular-nums; }
+.tl-meta-fps  { font-size: 11px; font-weight: 500; color: var(--label-3); font-variant-numeric: tabular-nums; margin-left: 12px; padding-left: 12px; border-left: 1px solid var(--sep); }
 
 .tl-empty-state {
   flex: 1;
