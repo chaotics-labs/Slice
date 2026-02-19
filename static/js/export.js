@@ -3,7 +3,7 @@
 
 function exportEDL() {
   if (!state.segments.length) return;
-  var fps  = 25, name = state.filename || 'Slice';
+  var fps  = state.fps || 25, name = state.filename || 'Slice';
   var lines = ['TITLE: ' + name + '_cuts', 'FCM: NON-DROP FRAME', ''];
   var recStart = 0;
 
@@ -19,12 +19,12 @@ function exportEDL() {
   });
 
   downloadText(lines.join('\n'), name + '_cuts.edl', 'text/plain');
-  pushLog('EDL exported — DaVinci Resolve / Avid (25fps)', 'success');
+  pushLog('EDL exported — DaVinci Resolve / Avid (' + fps.toFixed(2) + 'fps)', 'success');
 }
 
 function exportFCPXML() {
   if (!state.segments.length) return;
-  var fps = 25, name = state.filename || 'Slice';
+  var fps = state.fps || 25, name = state.filename || 'Slice';
   var totalDur = state.segments.reduce(function (a, s) { return a + (s[1] - s[0]); }, 0);
   function rat(s) { return Math.round(s * fps) + '/' + fps + 's'; }
 
@@ -57,7 +57,7 @@ function exportFCPXML() {
 
 function exportPremierePro() {
   if (!state.segments.length) return;
-  var fps = 25, name = state.filename || 'Slice';
+  var fps = state.fps || 25, name = state.filename || 'Slice';
   function fr(s) { return Math.round(s * fps); }
 
   var items = '', aItems = '', trackStart = 0;
