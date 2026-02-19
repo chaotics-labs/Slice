@@ -164,7 +164,7 @@ function onFileReady(data) {
   setChipReady();
   setupVideoPreview('/api/video/' + data.file_id);
   pushLog('Ready — ' + fmtTime(data.duration) + ' · ' + fmtBytes(data.size), 'success');
-  document.getElementById('sliceBtn').disabled = true;
+  var sliceBtn = document.getElementById('sliceBtn'); if (sliceBtn) sliceBtn.disabled = true;
   applyAccent();
   fetchPreview();
 }
@@ -178,7 +178,7 @@ function resetState() {
   db.stop();
   fileChip.classList.remove('show');
   dropZone.style.display = ''; restoreDropZone();
-  document.getElementById('sliceBtn').disabled = true;
+  var sliceBtn = document.getElementById('sliceBtn'); if (sliceBtn) sliceBtn.disabled = true;
   document.getElementById('tlEmpty').style.display = '';
   document.getElementById('tlBody').style.display = 'none';
 
@@ -206,7 +206,7 @@ document.getElementById('actionArea').addEventListener('click', function (e) {
 async function doSlice() {
   if (!state.fileId) return;
   console.log('[slice] starting job, file_id=' + state.fileId + ' mode=' + state.mode);
-  document.getElementById('sliceBtn').disabled = true;
+  var sliceBtn = document.getElementById('sliceBtn'); if (sliceBtn) sliceBtn.disabled = true;
   document.getElementById('statsCard').style.display = 'none';
   document.getElementById('logBox').innerHTML = '';
   setProgress(0); pushLog('Starting job…');
@@ -274,7 +274,7 @@ async function doSlice() {
           clearInterval(poll);
           console.error('[slice] job error:', sd.error);
           pushLog(sd.error || 'Unknown job error', 'error');
-          document.getElementById('sliceBtn').disabled = false;
+          var sliceBtn = document.getElementById('sliceBtn'); if (sliceBtn) sliceBtn.disabled = false;
         }
       } catch (pollErr) {
         console.error('[slice] poll fetch error:', pollErr.message);
@@ -284,7 +284,7 @@ async function doSlice() {
   } catch (e) {
     console.error('[slice] doSlice error:', e.name, e.message, e);
     pushLog('Error: ' + e.message, 'error');
-    document.getElementById('sliceBtn').disabled = false;
+    var sliceBtn = document.getElementById('sliceBtn'); if (sliceBtn) sliceBtn.disabled = false;
   }
 }
 
