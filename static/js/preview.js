@@ -4,66 +4,52 @@
 function fetchPreview() {
   console.log('[preview] ======== fetchPreview CALLED ========');
   console.log('[preview] state.fileId=' + state.fileId);
-  console.log('[preview] entire state object:', JSON.stringify(state));
   if (!state.fileId) {
-    console.error('[preview] ERROR: no fileId in state, cannot fetch preview');
-    console.error('[preview] state object:', state);
+    console.error('[preview] ERROR: no fileId in state');
     pushLog('No file selected — try uploading a video first', 'error');
     return;
   }
-  
-  console.log('[preview] fileId exists, clearing existing timeout');
+
   clearTimeout(state.previewTimer);
-  console.log('[preview] existing timeout cleared, id=' + state.previewTimer);
 
   var sb = document.getElementById('sliceBtn');
-  if (sb) { 
-    sb.disabled = true; sb.style.opacity = '0.5'; sb.style.cursor = 'wait';
-    console.log('[preview] slice button disabled');
-  } else {
-    console.warn('[preview] WARNING: slice button not found');
-  }
-  
+  if (sb) { sb.disabled = true; sb.style.opacity = '0.5'; sb.style.cursor = 'wait'; }
+
   vadStart();
-  console.log('[preview] vad animation started');
+  console.log('[preview] vad animation started, debouncing 800ms…');
 
   state.previewTimer = setTimeout(async function () {
-    console.log('[preview] ======== DEBOUNCE TIMEOUT FIRED = 800ms passed ========');
+    console.log('[preview] ======== DEBOUNCE TIMEOUT FIRED ========');
     var controller = new AbortController();
     var timeoutId  = setTimeout(function () {
       console.error('[preview] request timed out after 60s — aborting');
       controller.abort();
     }, 60000);
 
-    console.log('[preview] looking for slider elements...');
-    var thrSlider = document.getElementById('thrSlider');
+    // Helper to re-enable the slice button
+    function _enableBtn() {
+      var b = document.getElementById('sliceBtn');
+      if (b) { b.disabled = false; b.style.opacity = ''; b.style.cursor = ''; }
+    }
+
+    var thrSlider    = document.getElementById('thrSlider');
     var speechSlider = document.getElementById('speechSlider');
-    console.log('[preview] thrSlider=' + (thrSlider ? 'found' : 'NOT FOUND'), 'speechSlider=' + (speechSlider ? 'found' : 'NOT FOUND'));
-    if (!thrSlider) {
-      console.error('[preview] CRITICAL ERROR: thrSlider not found in DOM!');
-      console.error('[preview] available inputs:', document.querySelectorAll('input').length);
-      pushLog('Error: Threshold slider not found', 'error');
+
+    if (!thrSlider || !speechSlider) {
+      console.error('[preview] sliders not found in DOM');
+      pushLog('Error: sliders not found', 'error');
       vadStop();
+      _enableBtn();
       return;
     }
-    if (!speechSlider) {
-      console.error('[preview] CRITICAL ERROR: speechSlider not found in DOM!');
-      pushLog('Error: Speech slider not found', 'error');
-      vadStop();
-      return;
-    }
-    console.log('[preview] both sliders found successfully');
-    var thrValue = parseFloat(thrSlider.value);
-    var speechValue = parseInt(speechSlider.value);
-    console.log('[preview] slider values: threshold=' + thrValue + ', min_speech=' + speechValue);
-    
+
     var payload = {
       file_id:    state.fileId,
       mode:       state.mode,
-      threshold:  thrValue,
-      min_speech: speechValue,
+      threshold:  parseFloat(thrSlider.value),
+      min_speech: parseInt(speechSlider.value),
     };
-    console.log('[preview] payload assembled:', JSON.stringify(payload));
+    console.log('[preview] payload:', JSON.stringify(payload));
     console.log('[preview] ======== SENDING FETCH REQUEST ========');
 
     try {
@@ -75,20 +61,14 @@ function fetchPreview() {
       });
       clearTimeout(timeoutId);
 
-      console.log('[preview] ======== RESPONSE RECEIVED ========');
-      console.log('[preview] response status:', res.status);
+      console.log('[preview] ======== RESPONSE RECEIVED: status=' + res.status + ' ========');
 
       if (res.status === 429) {
-        console.warn('[preview] server busy (429) - VAD still processing previous request');
-        console.warn('[preview] will retry in 1 second...');
-        pushLog('Server busy (VAD still processing) - retrying...', 'warning');
+        console.warn('[preview] 429 busy — retrying in 1s');
+        pushLog('Server busy — retrying…', 'warning');
         vadStop();
-        var sb = document.getElementById('sliceBtn');
-        if (sb) { sb.disabled = false; sb.style.opacity = ''; sb.style.cursor = ''; }
-        setTimeout(function() {
-          console.log('[preview] retrying after 429 wait');
-          fetchPreview();
-        }, 1000);
+        _enableBtn();
+        setTimeout(fetchPreview, 1000);
         return;
       }
 
@@ -96,47 +76,47 @@ function fetchPreview() {
         var errText = await res.text();
         console.error('[preview] server error ' + res.status + ':', errText);
         pushLog('Preview failed (' + res.status + '): ' + errText, 'error');
+        // vadStop() runs in finally
         return;
       }
 
       var data = await res.json();
-      console.log('[preview] got response, full data:', JSON.stringify(data).substring(0, 300));
-      console.log('[preview] data.ok=' + data.ok, 'data.stats=' + (data.stats ? 'yes' : 'NO'), 'segments=' + (data.stats && data.stats.segments));
+      console.log('[preview] response JSON:', JSON.stringify(data).slice(0, 300));
 
       if (data.error) {
         console.error('[preview] server returned error:', data.error);
         pushLog('Preview error: ' + data.error, 'error');
+        // vadStop() runs in finally
         return;
       }
 
       if (data.ok && data.stats) {
-        console.log('[preview] stats received, building timeline...');
-        console.log('[preview] segments_list:', data.stats.segments_list);
+        console.log('[preview] stats OK — segments=' + data.stats.segments + ' dur=' + data.stats.original_duration);
+        console.log('[preview] segments_list:', JSON.stringify(data.stats.segments_list));
         showTimeline(data.stats.segments_list, data.stats.original_duration);
-        console.log('[preview] timeline shown, updating meta...');
         updateTimelineMeta(data.stats);
-        console.log('[preview] showing export card...');
         showExportCard();
-        console.log('[preview] enabling slice button...');
-        var sb = document.getElementById('sliceBtn');
-        if (sb) { sb.disabled = false; sb.style.opacity = ''; sb.style.cursor = ''; applyAccent(); }
-        console.log('[preview] preview complete');
+        _enableBtn();
+        applyAccent();
+        console.log('[preview] ======== PREVIEW COMPLETE ========');
       } else {
-        console.error('[preview] data.ok is false or data.stats missing');
-        console.error('[preview] full response:', JSON.stringify(data));
+        console.error('[preview] unexpected response shape:', JSON.stringify(data));
+        pushLog('Preview returned unexpected data', 'error');
       }
+
     } catch (err) {
       clearTimeout(timeoutId);
       if (err.name === 'AbortError') {
-        console.error('[preview] aborted after timeout');
-        pushLog('Preview timed out — VAD may be stuck on the server', 'error');
+        console.error('[preview] aborted after 60s timeout');
+        pushLog('Preview timed out — VAD may be stuck', 'error');
       } else {
-        console.error('[preview] fetch error:', err.name, err.message, err);
-        pushLog('Preview fetch error: ' + err.message, 'error');
+        console.error('[preview] fetch exception:', err.name, err.message);
+        pushLog('Preview error: ' + err.message, 'error');
       }
-      var sb = document.getElementById('sliceBtn');
-      if (sb) { sb.disabled = false; sb.style.opacity = ''; sb.style.cursor = ''; }
+      _enableBtn();
     } finally {
+      // Always stop the spinner, no matter which path we took
+      console.log('[preview] finally — calling vadStop()');
       vadStop();
     }
   }, 800);

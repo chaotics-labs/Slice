@@ -189,6 +189,9 @@ function onFileReady(data) {
     setupVideoPreview('/api/video/' + data.file_id);
     console.log('[file] video preview setup complete');
     
+    loadWaveform(data.file_id);
+    console.log('[file] waveform load triggered');
+    
     pushLog('Ready — ' + fmtTime(data.duration) + ' · ' + fmtBytes(data.size), 'success');
     console.log('[file] ready log pushed');
     
@@ -241,6 +244,7 @@ function resetState() {
   var vp = document.getElementById('videoPreviewCard'); if (vp) vp.style.display = 'none';
   var ec = document.getElementById('exportCard');       if (ec) ec.style.display = 'none';
 
+  resetWaveform();
   setProgress(0);
   renderActions('idle');
 }

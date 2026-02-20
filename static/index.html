@@ -6,6 +6,18 @@
   <title>Chaotics Slice  v1.2</title>
   <link rel="stylesheet" href="/static/css/style.css" />
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <style>
+    /* ── Cut-region dim overlay on the segment track ── */
+    .tl-cut-region {
+      position: absolute;
+      top: 0; bottom: 0;
+      background: rgba(0,0,0,0.42);
+      pointer-events: none;
+      z-index: 1;
+      border-radius: 2px;
+    }
+    .tl-clip { z-index: 2; }
+  </style>
 </head>
 <body>
 
@@ -13,13 +25,11 @@
 <nav class="navbar">
   <div class="navbar-left">
     <a href="https://lox.rombaut.org" target="_blank" rel="noopener noreferrer">
-    <img src="/static/res/Chaotics Logo White.svg" alt="Chaotics" class="brand-logo" />
+      <img src="/static/res/Chaotics Logo White.svg" alt="Chaotics" class="brand-logo" />
     </a>
-    <div style="display: flex; align-items: center;">
+    <div style="display:flex;align-items:center;">
       <img src="/static/res/Chaotics Slice Logo White.png" alt="Slice" class="brand-logo" />
-      <!-- <b>Slice</b> -->
     </div>
-  
     <span class="brand-badge">v1.2</span>
   </div>
   <div class="navbar-right">
@@ -51,8 +61,6 @@
     <!-- Source -->
     <section class="card">
       <h2 class="card-label">Source</h2>
-
-      <!-- Drop zone — click opens native file dialog via backend -->
       <div id="dropZone" class="dropzone">
         <div class="dropzone-content">
           <div class="dz-icon-wrap">
@@ -65,8 +73,6 @@
           <span class="dz-sub">or click to browse · MP4 · MKV · MOV · AVI · WebM</span>
         </div>
       </div>
-
-      <!-- File pill shown once a file is loaded -->
       <div class="file-pill" id="fileChip">
         <div class="pill-icon" id="chipIcon">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -97,7 +103,7 @@
       <p class="mode-hint" id="modeHint">Balanced cuts with natural pacing</p>
     </section>
 
-    <!-- Pro Settings -->
+    <!-- Advanced -->
     <section class="card">
       <button class="disclosure-btn" id="proToggle" aria-expanded="true">
         <span class="card-label" style="margin:0">Advanced</span>
@@ -171,37 +177,43 @@
       <!-- VAD analyzing state -->
       <div class="tl-vad-state" id="tlVadState">
         <div class="vad-bars">
-          <span class="vad-bar"></span>
-          <span class="vad-bar"></span>
-          <span class="vad-bar"></span>
-          <span class="vad-bar"></span>
-          <span class="vad-bar"></span>
-          <span class="vad-bar"></span>
+          <span class="vad-bar"></span><span class="vad-bar"></span><span class="vad-bar"></span>
+          <span class="vad-bar"></span><span class="vad-bar"></span><span class="vad-bar"></span>
           <span class="vad-bar"></span>
         </div>
         <span class="vad-label">Slicing audio…</span>
       </div>
 
+      <!-- Timeline body — hidden until file loaded -->
       <div class="tl-body" id="tlBody" style="display:none">
         <div class="tl-ruler" id="tlRuler"></div>
+
+        <!-- Segment track -->
         <div class="tl-row">
-          <span class="tl-row-label">Keep</span>
+          <span class="tl-row-label">Video</span>
           <div class="tl-track" id="trackKept">
             <div class="tl-playhead" id="phKept"></div>
           </div>
         </div>
-        <div class="tl-row">
-          <span class="tl-row-label">Cut</span>
-          <div class="tl-track tl-track-cut" id="trackCut">
-            <div class="tl-playhead" id="phCut"></div>
-          </div>
-        </div>
+
         <div class="tl-axis">
           <span>0:00</span>
           <span id="tlAxisMid"></span>
           <span id="tlAxisEnd">—</span>
         </div>
-      </div>
+
+        <!-- Waveform row — same structure as segment track for pixel-perfect alignment -->
+        <div id="waveformContainer" style="display:none">
+          <div class="tl-waveform-row">
+            <span class="tl-waveform-label">Wave</span>
+            <div class="tl-waveform-track">
+              <canvas id="waveformCanvas"></canvas>
+              <span id="waveformStatus"></span>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /tl-body -->
     </section>
 
     <!-- ══ Video Preview Player ══ -->
@@ -225,7 +237,7 @@
           <button class="pv-btn" id="pvNextBtn" title="Next segment">
             <i data-lucide="skip-forward" width="13" height="13"></i>
           </button>
-          <button class="pv-btn" id="pvAutoplayBtn" title="Toggle autoplay — auto-play next segment after current ends">
+          <button class="pv-btn" id="pvAutoplayBtn" title="Toggle autoplay">
             <i data-lucide="circle-dashed" width="13" height="13" class="pv-icon-autoplay-off"></i>
             <i data-lucide="circle-arrow-right" width="13" height="13" style="display:none" class="pv-icon-autoplay-on"></i>
           </button>
@@ -244,8 +256,6 @@
             <span class="pv-live-dot"></span>LIVE PREVIEW
           </div>
         </div>
-
-        <!-- Info panel to the right of the video -->
         <div class="pv-info-panel" id="pvInfoPanel">
           <div class="pv-info-item pv-info-item-big">
             <span class="pv-info-label">Saved</span>
@@ -308,7 +318,6 @@
         </div>
       </div>
       <div class="export-btns">
-
         <button class="export-btn" id="exportEdlBtn">
           <div class="export-btn-icon" style="background:rgba(0,122,255,.12);color:#0a84ff;">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -324,7 +333,6 @@
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
           </svg>
         </button>
-
         <button class="export-btn" id="exportFcpBtn">
           <div class="export-btn-icon" style="background:rgba(50,173,230,.12);color:#32ade6;">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -339,7 +347,6 @@
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
           </svg>
         </button>
-
         <button class="export-btn" id="exportPpBtn">
           <div class="export-btn-icon" style="background:rgba(175,82,222,.12);color:#bf5af2;">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -354,7 +361,6 @@
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
           </svg>
         </button>
-
       </div>
     </section>
 

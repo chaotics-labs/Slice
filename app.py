@@ -198,6 +198,40 @@ def api_video(file_id: str):
     )
 
 
+@app.route("/api/audio/<file_id>")
+def api_audio(file_id: str):
+    """Serve the extracted WAV for client-side waveform rendering."""
+    sess = file_sessions.get(file_id)
+    if not sess:
+        return jsonify({"error": "Unknown file_id"}), 404
+
+    audio_path = Path(sess["audio_path"])
+    if not audio_path.exists():
+        return jsonify({"error": "Audio file not found"}), 404
+
+    file_size = audio_path.stat().st_size
+    print(f"[audio] serving {audio_path.name} size={file_size}", flush=True)
+
+    def stream():
+        with open(audio_path, "rb") as f:
+            while True:
+                chunk = f.read(65536)
+                if not chunk:
+                    break
+                yield chunk
+
+    return Response(
+        stream(),
+        status=200,
+        headers={
+            "Content-Type":   "audio/wav",
+            "Content-Length": str(file_size),
+            "Cache-Control":  "no-store",
+            "Accept-Ranges":  "none",
+        },
+    )
+
+
 @app.route("/api/preview", methods=["POST"])
 def api_preview():
     """Run VAD preview (returns segment stats, no video encoding)."""
